@@ -46,7 +46,7 @@ function EPGP:OnLoad()
 	self.EPGP_StandingsDB = {}
 	self.EPGP_GroupsDB = {}
 	self.Config = {}
-	
+	self.FilterList = false
     -- load our form file
 	self.xmlDoc = XmlDoc.CreateFromFile("EPGP.xml")
 	self.wndMain = Apollo.LoadForm(self.xmlDoc, "EPGPForm", nil, self)
@@ -438,10 +438,10 @@ function EPGP:generateStandingsGrid()
 	local grdList = self.wndMain:FindChild("grdStandings")
 	local nGuildCount = 0 -- count of guild members
 	
-	-- Group Check
-	if GroupLib.GetMemberCount() == 0 then Print("[EPGP] Error: You Are Not In A Group.") return end 
+	-- Group Check [ Disabling Group and Guild Checks For Now :: April 5th, 2014 ]
+	-- if GroupLib.GetMemberCount() == 0 then Print("[EPGP] Error: You Are Not In A Group.") return end 
 	-- If you aren't in a guild, you shouldn't even be using this. derp.
-	if GameLib.GetPlayerUnit():GetGuildName() == nil then Print("[EPGP] Error: You Are Not In A Guild.") return end 
+	-- if GameLib.GetPlayerUnit():GetGuildName() == nil then Print("[EPGP] Error: You Are Not In A Guild.") return end 
 
 	self.EPGP_StandingsDB = self.EPGP_StandingsDB or {}
 	self:RefreshGuildRoster()
@@ -453,8 +453,27 @@ function EPGP:generateStandingsGrid()
 		end
 	end 
 
+	local size = GroupLib.GetMemberCount()
+	if self.FilterList == true and size > 0 then 
+		grdList:DeleteAll()
+		-- Get Group List
+		local listDB = {}
+		for i=1,size do 
+			local strCName = GroupLib.GetUnitForGroupMember(i):GetName()
+			Print("Name: " .. strCName)
+			if strCName ~= nil then
+				self.EPGP_StandingsDB[strCName] = self.EPGP_StandingsDB[strCName] or {}
+				if self.EPGP_StandingsDB[strCName] == nil then 
+					self.EPG_StandingsDB[strCName]["Standings"] = {}
+				end 
+				table.insert( listDB, self.EPGP_StandingsDB[GroupLib.GetUnitForGroupMember(i):GetName()])
+			end
+		end 
+		SendVarToRover("GroupListStandings",listDB)
+	end 
 	grdList:DeleteAll()
-	for k, val in pairs( self.EPGP_StandingsDB) do 
+	if self.FilterList == false then listDB = self.EPGP_StandingsDB end
+	for k, val in pairs( listDB ) do 
 		local iCurrRow = grdList:AddRow("")
 		grdList:SetCellLuaData(iCurrRow, 1, k)
 		local EP = self:GetEP(k)
@@ -946,6 +965,16 @@ function EPGP:OnImportExportButton( wndHandler, wndControl, eMouseButton, nLastR
 	self.wndImportExport:ToFront()
 	
 	
+end
+
+function EPGP:OnFilterListCheck( wndHandler, wndControl, eMouseButton )
+	self.FilterList = true
+	self:generateStandingsGrid()
+end
+
+function EPGP:OnFilterListUnCheck( wndHandler, wndControl, eMouseButton )
+	self.FilterList = false
+	self:generateStandingsGrid()
 end
 
 ---------------------------------------------------------------------------------------------------
