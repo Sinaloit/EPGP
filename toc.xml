@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Addon Author="Kardall" APIVersion="7" Name="EPGP" Description="Raid Group Loot Manager" Version="0.4">
+    <Script Name="EPGP.lua"/>
+    <Form Name="EPGP.xml"/>
+</Addon>
