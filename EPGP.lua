@@ -177,24 +177,23 @@ function EPGP:OnEPGPReset()
 	self:generateStandingsGrid()
 end 
 
-local function exportEPGP( iFormat )
+function EPGP:exportEPGP( iFormat )
 	-- Spit out Data:
 	--  Name_EP-GP
 	-- Format:
 	--  1 = Text
 	--  2 = xml
-	local strOutput = ""
 	local iNum = 1
 	local nEntries = 0
 	local db = self.EPGP_StandingsDB
-	for a,c in pairs(tGroup) do
-		nEntries = nEntires + 1
+	for a,c in pairs(db) do
+		nEntries = nEntries + 1
 	end 
-	
+	local retVal = ""
 	if iFormat == nil or iFormat == 1 then 
-		for k,v in pairs(tGroup) do
-			local strOutput = v .. "_" .. self.EPGP_StandingsDB[v]["Standings"].EP .. "-" .. self.EPGP_StandingsDB[v]["Standings"].GP
-			if iNum < #nEntries then strOutput = strOutput .. "," end -- not at the max, add a comma
+		for k,v in pairs(db) do
+			retVal = retVal .. k .. "_" .. self.EPGP_StandingsDB[k]["Standings"].EP .. "-" .. self.EPGP_StandingsDB[k]["Standings"].GP
+			if iNum < nEntries then retVal = retVal .. "," end -- not at the max, add a comma
 			iNum = iNum + 1
 		end 
 	elseif iFormat == 2 then
@@ -212,36 +211,50 @@ local function exportEPGP( iFormat )
 		--	  <GP>0</GP>
 		--  </Entry>
 		--  </EPGP>
-		strOutput = "<EPGP>"
-		for k, v in pairs(tGroup) do
-			strOutput = strOutput .. "<Entry>" .. "<Name>" .. v .. "</Name><EP>" .. self.EPGP_StandingsDB[v]["Standings"].EP .. "</EP><GP>" .. self.EPGP_StandingsDB[v]["Standings"].GP .. "</GP></Entry>"
+		retVal = "<EPGP>"
+		for k, v in pairs(db) do
+			retVal = retVal .. "<Entry>" .. "<Name>" .. v .. "</Name><EP>" .. self.EPGP_StandingsDB[v]["Standings"].EP .. "</EP><GP>" .. self.EPGP_StandingsDB[v]["Standings"].GP .. "</GP></Entry>"
 		end
-		strOutput = strOutput .. "</EPGP>"
+		retVal = retVal .. "</EPGP>"
 		
 	end 
-	
-	return strOutput
+	return retVal
+end
+local function explode(inputstr, sep)
+	        if sep == nil then
+                sep = "%s"
+        end
+        local t = {}
+		local i = 1
+        for str in string.gmatch(inputstr, "([^"..sep.."]+)") do
+                t[i] = str
+                i = i + 1
+        end
+        return t
 end
 
-local function importEPGP( tImportData )
+function EPGP:importEPGP( tImportData )
 	if tImportData == nil or tImportData == "" then return end
 	-- reset db
 	self.EPGP_StandingsDB = {}
 	-- Example string: "Name_EP-GP,Name_EP-GP,Name_EP-GP,Name_EP-GP,Name_EP-GP"
+	-- Ryles_503.2-700,Fuzzrig_503.2-700
 	local tEntries = explode( tImportData, "," )
 	local strName = ""
 	local strEP = ""
 	local strGP = ""
 	for k, v in pairs( tEntries ) do
-		local tFirstSplit = explode( k, "_" )
+		local tFirstSplit = explode( v, "_" )
 		strName = tFirstSplit[1]
-		local tSecondSplit = explod( tFirstSplit[2], "-" )
+		local tSecondSplit = explode( tFirstSplit[2], "-" )
 		strEP = tSecondSplit[1]
 		strGP = tSecondSplit[2]
 		-- now we have all we need, lets insert it into the db
 		self.EPGP_StandingsDB[strName] = {}
-		self.EPGP_StandingsDB[strName] = { EP = strEP, GP = strGP }
+		self.EPGP_StandingsDB[strName]["Standings"] = { EP = strEP, GP = strGP }
 	end
+	self:generateStandingsGrid()
+	Print("[EPGP] DB Imported")
 end
 
 -- on SlashCommand "/epgp"
@@ -935,6 +948,21 @@ function EPGP:OnImportExportButton( wndHandler, wndControl, eMouseButton, nLastR
 	
 end
 
+---------------------------------------------------------------------------------------------------
+-- inoutForm Functions
+---------------------------------------------------------------------------------------------------
+
+function EPGP:OnExportDBClick( wndHandler, wndControl, eMouseButton )
+	wndHandler:GetParent():FindChild("txtData"):SetText( self:exportEPGP( 1 ) )
+end
+
+function EPGP:OnImportDBClick( wndHandler, wndControl, eMouseButton )
+	self:importEPGP( wndHandler:GetParent():FindChild("txtData"):GetText() )
+	wndHandler:GetParent():Destroy()
+end
+
 -- EPGP Instance
 local EPGPInst = EPGP:new()
 EPGPInst:Init()
+
+
