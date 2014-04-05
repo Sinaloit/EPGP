@@ -25,6 +25,7 @@ local EPGP = {}
 local MenuToolTipFont_Header = "CRB_Pixel_O"
 local MenuToolTipFont = "CRB_Pixel" 
 local MenuToolTipFont_Help = "CRB_InterfaceSmall_I"
+local kStrStandings = "Standings"
 
 function EPGP:new(o)
     o = o or {}
@@ -143,8 +144,8 @@ function EPGP:GroupAwardEP( amt, reason )
 	end 
 	for k,v in pairs(tGroup) do
 		self.EPGP_StandingsDB[v] = self.EPGP_StandingsDB[v] or {}
-		self.EPGP_StandingsDB[v]["Standings"] = self.EPGP_StandingsDB[v]["Standings"] or { EP = self.Config.MinEP, GP = self.Config.BaseGP }
-		self.EPGP_StandingsDB[v]["Standings"].EP = tonumber(self.EPGP_StandingsDB[v]["Standings"].EP) + tonumber(amt)
+		self.EPGP_StandingsDB[v][kStrStandings] = self.EPGP_StandingsDB[v][kStrStandings] or { EP = self.Config.MinEP, GP = self.Config.BaseGP }
+		self.EPGP_StandingsDB[v][kStrStandings].EP = tonumber(self.EPGP_StandingsDB[v][kStrStandings].EP) + tonumber(amt)
 	end 
 
 	ChatSystemLib.Command("/p [Mass Award] Awarded Mass Group EP ( "..amt.." ) [ "..reason.."]")
@@ -164,10 +165,10 @@ function EPGP:IsInGroup( strPlayer )
 end
 
 function EPGP:EPGP_AwardEP( strCharName, amtEP, amtGP )
-	local EP = self.EPGP_StandingsDB[strCharName]["Standings"].EP or self.Config.MinEP
-	local GP = self.EPGP_StandingsDB[strCharName]["Standings"].GP or self.Config.BaseGP
-	self.EPGP_StandingsDB[strCharName]["Standings"].EP = EP + amtEP
-	self.EPGP_StandingsDB[strCharName]["Standings"].GP = GP + amtGP
+	local EP = self.EPGP_StandingsDB[strCharName][kStrStandings].EP or self.Config.MinEP
+	local GP = self.EPGP_StandingsDB[strCharName][kStrStandings].GP or self.Config.BaseGP
+	self.EPGP_StandingsDB[strCharName][kStrStandings].EP = EP + amtEP
+	self.EPGP_StandingsDB[strCharName][kStrStandings].GP = GP + amtGP
 	self:generateStandingsGrid()
 end 
 
@@ -192,7 +193,7 @@ function EPGP:exportEPGP( iFormat )
 	local retVal = ""
 	if iFormat == nil or iFormat == 1 then 
 		for k,v in pairs(db) do
-			retVal = retVal .. k .. "_" .. self.EPGP_StandingsDB[k]["Standings"].EP .. "-" .. self.EPGP_StandingsDB[k]["Standings"].GP
+			retVal = retVal .. k .. "_" .. self.EPGP_StandingsDB[k][kStrStandings].EP .. "-" .. self.EPGP_StandingsDB[k][kStrStandings].GP
 			if iNum < nEntries then retVal = retVal .. "," end -- not at the max, add a comma
 			iNum = iNum + 1
 		end 
@@ -213,7 +214,7 @@ function EPGP:exportEPGP( iFormat )
 		--  </EPGP>
 		retVal = "<EPGP>"
 		for k, v in pairs(db) do
-			retVal = retVal .. "<Entry>" .. "<Name>" .. v .. "</Name><EP>" .. self.EPGP_StandingsDB[v]["Standings"].EP .. "</EP><GP>" .. self.EPGP_StandingsDB[v]["Standings"].GP .. "</GP></Entry>"
+			retVal = retVal .. "<Entry>" .. "<Name>" .. v .. "</Name><EP>" .. self.EPGP_StandingsDB[v][kStrStandings].EP .. "</EP><GP>" .. self.EPGP_StandingsDB[v][kStrStandings].GP .. "</GP></Entry>"
 		end
 		retVal = retVal .. "</EPGP>"
 		
@@ -251,7 +252,7 @@ function EPGP:importEPGP( tImportData )
 		strGP = tSecondSplit[2]
 		-- now we have all we need, lets insert it into the db
 		self.EPGP_StandingsDB[strName] = {}
-		self.EPGP_StandingsDB[strName]["Standings"] = { EP = strEP, GP = strGP }
+		self.EPGP_StandingsDB[strName][kStrStandings] = { EP = strEP, GP = strGP }
 	end
 	self:generateStandingsGrid()
 	Print("[EPGP] DB Imported")
@@ -449,35 +450,33 @@ function EPGP:generateStandingsGrid()
 		for i=1,GroupLib.GetMemberCount() do
 			v = GroupLib.GetUnitForGroupMember(i):GetName()
 			self.EPGP_StandingsDB[v] = self.EPGP_StandingsDB[v] or {}
-			self.EPGP_StandingsDB[v]["Standings"] = self.EPGP_StandingsDB[v]["Standings"] or { EP = self.Config.MinEP, GP = self.Config.BaseGP }
+			self.EPGP_StandingsDB[v][kStrStandings] = self.EPGP_StandingsDB[v][kStrStandings] or { EP = self.Config.MinEP, GP = self.Config.BaseGP }
 		end
 	end 
 
 	local size = GroupLib.GetMemberCount()
+	local listDB = {}
+	grdList:DeleteAll()
 	if self.FilterList == true and size > 0 then 
-		grdList:DeleteAll()
 		-- Get Group List
-		local listDB = {}
 		for i=1,size do 
-			local strCName = GroupLib.GetUnitForGroupMember(i):GetName()
-			Print("Name: " .. strCName)
+			local strCName = GroupLib.GetGroupMember(i).strCharacterName
 			if strCName ~= nil then
-				self.EPGP_StandingsDB[strCName] = self.EPGP_StandingsDB[strCName] or {}
-				if self.EPGP_StandingsDB[strCName] == nil then 
-					self.EPG_StandingsDB[strCName]["Standings"] = {}
-				end 
-				table.insert( listDB, self.EPGP_StandingsDB[GroupLib.GetUnitForGroupMember(i):GetName()])
+				if self.EPGP_StandingsDB[strCName] == nil then
+					self.EPGP_StandingsDB[strCName] = {}
+					self.EPGP_StandingsDB[strCName][kStrStandings] = {}	
+				end
+				listDB[strCName] = self.EPGP_StandingsDB[strCName]
 			end
 		end 
-		SendVarToRover("GroupListStandings",listDB)
-	end 
-	grdList:DeleteAll()
-	if self.FilterList == false then listDB = self.EPGP_StandingsDB end
-	for k, val in pairs( listDB ) do 
+	else
+		listDB = self.EPGP_StandingsDB
+	end
+	for k, v in pairs( listDB ) do 
 		local iCurrRow = grdList:AddRow("")
 		grdList:SetCellLuaData(iCurrRow, 1, k)
-		local EP = self:GetEP(k)
-		local GP = self:GetGP(k)
+		local EP = v[kStrStandings].EP
+		local GP = v[kStrStandings].GP
 		local PR = string.format("%.2f", EP / GP)
 
 		grdList:SetCellText(iCurrRow, 1, k)
@@ -499,12 +498,12 @@ function EPGP:generateStandingsGrid()
 end
 
 function EPGP:GetEP(strName)
-	local EP = self.EPGP_StandingsDB[strName]["Standings"].EP or self.Config.MinEP
+	local EP = self.EPGP_StandingsDB[strName][kStrStandings].EP or self.Config.MinEP
 	return EP
 end
 
 function EPGP:GetGP(strName)
-	local GP = self.EPGP_StandingsDB[strName]["Standings"].GP or self.Config.BaseGP
+	local GP = self.EPGP_StandingsDB[strName][kStrStandings].GP or self.Config.BaseGP
 	return GP
 end 
 function EPGP:OnGroupJoin( strName, nId)
@@ -528,8 +527,8 @@ function EPGP:WhisperCommand( channelCurrent, bAutoResponse, bGM, bSelf, strSend
 	if string.find( strMessage,"\!standing" ) then 
 		local strName = strSender
 		Print("Looking for " .. strName)
-		self.EPGP_StandingsDB[strName]["Standings"] = self.EPGP_StandingsDB[strName]["Standings"] or {}
-		local stnd = self.EPGP_StandingsDB[strName]["Standings"]
+		self.EPGP_StandingsDB[strName][kStrStandings] = self.EPGP_StandingsDB[strName][kStrStandings] or {}
+		local stnd = self.EPGP_StandingsDB[strName][kStrStandings]
 		if stnd.EP == nil then 
 		stnd.EP = self.Config.MinEP
 		end 
@@ -570,7 +569,7 @@ function EPGP:calculateAuctionWinner()
 		local tStnd = self.EPGP_StandingsDB
 		if tStnd == nil then return winner end 
 		for k, tSamplePlayer in pairs(tStnd) do
-			local tPlayerStandings = tSamplePlayer["Standings"]
+			local tPlayerStandings = tSamplePlayer[kStrStandings]
 			if string.lower(k) == string.lower(self.Auction["Bidders"][idx]) then  -- Matching Name
 				EP = tPlayerStandings.EP
 				GP = tPlayerStandings.GP
@@ -661,7 +660,7 @@ function EPGP:ReportStanding(channelCurrent,
 						)
 	local strName = strSender
 	Print("[EPGP] Msg for " .. strName)
-	local stnd = self.EPGP_StandingsDB[strName]["Standings"]
+	local stnd = self.EPGP_StandingsDB[strName][kStrStandings]
 	if not stnd or stnd == nil then Print("[EPGP] stnd is nil or not there") end
 	if (stnd.Sent == false or stnd.Sent == nil) and string.find( arMessageSegments[1].strText:lower(),"\!standing" ) then 
 		local tmpID = GameLib.GetServerTime()
@@ -693,11 +692,11 @@ end
 
 function EPGP:DecayEPGP()
 	for k, val in pairs( self.EPGP_StandingsDB) do 
-		local EP = self.EPGP_StandingsDB[k]["Standings"].EP / 1.20
-		local GP = self.EPGP_StandingsDB[k]["Standings"].GP / 1.20		
+		local EP = self.EPGP_StandingsDB[k][kStrStandings].EP / 1.20
+		local GP = self.EPGP_StandingsDB[k][kStrStandings].GP / 1.20		
 		self.EPGP_StandingsDB[k] = self.EPGP_StandingsDB[k] or {}
-		self.EPGP_StandingsDB[k]["Standings"].EP = string.format("%.2f",self.EPGP_StandingsDB[k]["Standings"].EP / 1.20) 
-		self.EPGP_StandingsDB[k]["Standings"].GP = string.format("%.2f",self.EPGP_StandingsDB[k]["Standings"].GP / 1.20)
+		self.EPGP_StandingsDB[k][kStrStandings].EP = string.format("%.2f",self.EPGP_StandingsDB[k][kStrStandings].EP / 1.20) 
+		self.EPGP_StandingsDB[k][kStrStandings].GP = string.format("%.2f",self.EPGP_StandingsDB[k][kStrStandings].GP / 1.20)
 	end 
 	self:generateStandingsGrid()
 end 
@@ -757,8 +756,8 @@ end
 function EPGP:Top10List()
 	self.top10 = {}
 	for k, val in pairs( self.EPGP_StandingsDB) do 
-		local EP = self.EPGP_StandingsDB[k]["Standings"].EP
-		local GP = self.EPGP_StandingsDB[k]["Standings"].GP
+		local EP = self.EPGP_StandingsDB[k][kStrStandings].EP
+		local GP = self.EPGP_StandingsDB[k][kStrStandings].GP
 		local PR = EP / GP
 		PR = string.format("%.3f",PR)
 		-- Use the PR as a key in string form, and add the name [k] as a entry so we can count entries later
