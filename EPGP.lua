@@ -26,6 +26,12 @@ local MenuToolTipFont_Header = "CRB_Pixel_O"
 local MenuToolTipFont = "CRB_Pixel" 
 local MenuToolTipFont_Help = "CRB_InterfaceSmall_I"
 local kStrStandings = "Standings"
+local kStrSortDownSprite = "HologramSprites:HoloArrowDownBtnFlyby"
+local kStrSortUpSprite = "HologramSprites:HoloArrowUpBtnFlyby"
+local ktAwardReasons = {
+	"Genetic Archives",
+	"Datascape",
+}
 
 function EPGP:new(o)
     o = o or {}
@@ -38,7 +44,7 @@ function EPGP:new(o)
 end
 
 function EPGP:Init()
-    Apollo.RegisterAddon(self, false, "", {"GroupBag"})
+    Apollo.RegisterAddon(self, true, "EPGP", {"MasterLoot"})
 end
 
 -- EPGP OnLoad
@@ -56,7 +62,9 @@ function EPGP:OnLoad()
 		return Apollo.AddonLoadStatus.LoadingError
 	end
 	
-    self.wndMain:Show(false, true)
+	self.wndGrid = self.wndMain:FindChild("grdStandings")
+	self.nSortCol = 1
+	self.bSortAsc = false
 
 	self.wndMassAwardEP = Apollo.LoadForm(self.xmlDoc, "MassAwardEPForm", nil, self)
 	if self.wndMassAwardEP == nil then
@@ -81,23 +89,94 @@ function EPGP:OnLoad()
 	end
 	
     self.wndEPGPMenu:Show(true, true)
+    -- Register Slash Commands
 	Apollo.RegisterSlashCommand("epgp", "OnEPGPOn", self)
 	Apollo.RegisterSlashCommand("epgpreset", "OnEPGPReset", self)
+
 	Apollo.RegisterTimerHandler("RecurringEPAwardTimer", "Timer_RecurringEPAward", self) 
+
+	-- Register Events
 	Apollo.RegisterEventHandler("GuildRoster", "OnGuildRoster", self)
 	Apollo.RegisterEventHandler("ChatMessage", "WhisperCommand", self)
 	Apollo.RegisterEventHandler("Group_Join", "OnGroupJoin", self) 
-	Apollo.RegisterTimerHandler("TimerCheckAuctionExpired","TimerCheckAuctionExpired", self)
+	
+	--Apollo.RegisterTimerHandler("TimerCheckAuctionExpired","TimerCheckAuctionExpired", self)
+	
 	--self:SetSyncChannel()
 	--self:ToggleButtonStatus()
-	-- TODO: Code For Bid Button Placement Positioning
-	local wndGroupBag = Apollo.GetAddon("GroupBag").wndGroupBag
-	self.btnBidButton = Apollo.LoadForm(self.xmlDoc, "BidButton", wndGroupBag, self)
-	if self.btnBidButton == nil then
-		Apollo.AddAddonErrorText(self, "Could not load the main window for some reason.")
-		return Apollo.AddonLoadStatus.LoadingError
+	
+	self.wndOldSort = self.wndMain:FindChild("Character")
+	self:SetupAwards()
+	-- Setup Hooks
+	self:RegisterHooks()
+end
+
+function EPGP:SetupAwards()
+	local wndContainer = self.wndMain:FindChild("AwardListBtns")
+	local nCount = 1
+	for i,k in pairs(ktAwardReasons) do
+		local wndAwardBtn = Apollo.LoadForm(self.xmlDoc,"AwardReasonButton", wndContainer, self)
+		wndAwardBtn:SetText(k)
+		nCount = nCount + 1
 	end
-    self.btnBidButton:Show(true, true)
+	local wndAwardBtn = Apollo.LoadForm(self.xmlDoc,"AwardReasonButton", wndContainer, self)
+	wndAwardBtn:SetText("Other")
+	wndContainer:ArrangeChildrenVert(2)
+	local nLeft, nTop, nRight, nBottom = wndContainer:GetParent():GetAnchorOffsets()
+	wndContainer:GetParent():SetAnchorOffsets(nLeft, nTop, nRight, nBottom + (nCount * 22))
+end
+
+local function SortByPR(a, b)
+	local aPR = a:FindChild("Value"):GetText()
+	local bPR = b:FindChild("Value"):GetText()
+
+	return aPR > bPR
+end
+
+function EPGP:RegisterHooks()
+	local tEPGP = self
+	local tMasterLoot = Apollo.GetAddon("MasterLoot")
+	-- Master Loot Assignment
+	local fnOldOnAssignDown = tMasterLoot.OnAssignDown
+	tMasterLoot.OnAssignDown = function(tMLoot, wndHandler, wndControl, eMouseButton)
+		if tMLoot.tMasterLootSelectedItem ~= nil and tMLoot.tMasterLootSelectedLooter ~= nil then
+			tEPGP:AwardItem(tMLoot.tMasterLootSelectedLooter, tMLoot.tMasterLootSelectedItem:GetData().itemDrop)
+		end
+		fnOldOnAssignDown(tMLoot, wndHandler, wndControl, eMouseButton)
+	end
+	-- Hook to add a PR display to all items in MasterLoot display
+	local fnOldOnItemCheck = tMasterLoot.OnItemCheck
+	tMasterLoot.OnItemCheck = function(tMLoot, wndHandler, wndControl, eMouseButton)
+		fnOldOnItemCheck(tMLoot, wndHandler, wndControl, eMouseButton)
+		for idx, wndLooter in pairs(tMLoot.wndMasterLoot:FindChild("LooterList"):GetChildren()) do
+			local wndOverlay = Apollo.LoadForm(tEPGP.xmlDoc, "EPGPOverlay", wndLooter, tEPGP)
+			wndOverlay:FindChild("Label"):SetText("PR")
+			wndOverlay:FindChild("Value"):SetText(string.format("%.2f",tEPGP:GetPR(wndLooter:FindChild("CharacterName"):GetText())))
+		end
+		tMLoot.wndMasterLoot:FindChild("LooterList"):ArrangeChildrenVert(0, SortByPR)
+	end
+	-- Display GP Cost for Master Looter
+	local fnOldMasterLootHelper = tMasterLoot.MasterLootHelper
+	tMasterLoot.MasterLootHelper = function(tMLoot, tMasterLootItemList)
+		fnOldMasterLootHelper(tMLoot, tMasterLootItemList)
+		if tMLoot.wndMasterLoot ~= nil then
+			for idx, wndLoot in pairs(tMLoot.wndMasterLoot:FindChild("ItemList"):GetChildren()) do
+				local wndOverlay = Apollo.LoadForm(tEPGP.xmlDoc, "EPGPOverlay", wndLoot, tEPGP)
+				wndOverlay:FindChild("Value"):SetText(tEPGP:CalculateItemGPValue(wndLoot:GetData().itemDrop))
+			end
+		end
+	end
+	-- Display GP Cost for Looter
+	local fnOldLooterHelper = tMasterLoot.LooterHelper
+	tMasterLoot.LooterHelper = function(tMLoot, tLooterItemList)
+		fnOldLooterHelper(tMLoot, tLooterItemList)
+		if tMLoot.wndLooter ~= nil then
+			for idx, wndLoot in pairs(tMLoot.wndLooter:FindChild("ItemList"):GetChildren()) do
+				local wndOverlay = Apollo.LoadForm(tEPGP.xmlDoc, "EPGPOverlay", wndLoot, tEPGP)
+				wndOverlay:FindChild("Value"):SetText(tEPGP:CalculateItemGPValue(wndLoot:GetData().itemDrop))
+			end
+		end
+	end
 end
 
 function EPGP:SetSyncChannel() -- Not Used, however, I am keeping this in here for future use
@@ -172,10 +251,15 @@ function EPGP:EPGP_AwardEP( strCharName, amtEP, amtGP )
 	self:generateStandingsGrid()
 end 
 
+function EPGP:AwardItem(tCharacter, tItem)
+	local nGPCost = self:CalculateItemGPValue(tItem)
+	ChatSystemLib.Command("/p ["..tCharacter:GetName().."] Received "..tItem:GetName().." "..nGPCost.."GP")
+	self:EPGP_AwardEP(tCharacter:GetName(), 0, nGPCost)
+end
+
 function EPGP:OnEPGPReset()
 	self.EPGP_StandingsDB = {}
 	self:GroupAwardEP( 0, "Initialization..." )
-	self:generateStandingsGrid()
 end 
 
 function EPGP:exportEPGP( iFormat )
@@ -343,7 +427,7 @@ function EPGP:ToggleButtonStatus()
 
 end 
 
-function EPGP:OnOpenConfig( wndHandler, wndControl, eMouseButton )
+function EPGP:OnConfigure()
 	if self.Config == nil then 
 		self.Config.MinEP = "10"
 		self.Config.BaseGP = "15"
@@ -436,7 +520,7 @@ function EPGP:RefreshGuildRoster()
 end 
 
 function EPGP:generateStandingsGrid()
-	local grdList = self.wndMain:FindChild("grdStandings")
+	local grdList = self.wndGrid
 	local nGuildCount = 0 -- count of guild members
 	
 	-- Group Check [ Disabling Group and Guild Checks For Now :: April 5th, 2014 ]
@@ -464,7 +548,7 @@ function EPGP:generateStandingsGrid()
 			if strCName ~= nil then
 				if self.EPGP_StandingsDB[strCName] == nil then
 					self.EPGP_StandingsDB[strCName] = {}
-					self.EPGP_StandingsDB[strCName][kStrStandings] = {}	
+					self.EPGP_StandingsDB[strCName]["Standings"] = {}	
 				end
 				listDB[strCName] = self.EPGP_StandingsDB[strCName]
 			end
@@ -493,8 +577,12 @@ function EPGP:generateStandingsGrid()
 		grdList:SetCellSortText(iCurrRow, 4, tonumber(string.format("%.3f",PR)))
 		
 	end
-	nSortCol = tonumber(self.SortColumn) or 4
-	grdList:SetSortColumn(nSortCol)
+	grdList:SetSortColumn(self.nSortCol or 4, self.bSortAsc)
+end
+
+function EPGP:GetPR(strName)
+	local PR = self:GetEP(strName) / self:GetGP(strName)
+	return PR
 end
 
 function EPGP:GetEP(strName)
@@ -514,18 +602,17 @@ function EPGP:OnConfigMsg( channel, tMsg )
 	ChatSystemLib.Command("/p [EPGP] Message Received on Config Channel")
 end	
 
-function EPGP:WhisperCommand( channelCurrent, bAutoResponse, bGM, bSelf, strSender, strRealmName, nPresenceState,
-							  arMessageSegments, unitSource, bShowChatBubble, bCrossFaction)
+function EPGP:WhisperCommand(channelCurrent, tMessage)
 	if GameLib.GetPlayerUnit() == nil then return end
-	if bSelf or not self:IsInGroup( strSender ) then return end -- You are running it, look at the list silly head.
+	if tMessage.bSelf or not self:IsInGroup( tMessage.strSender ) then return end -- You are running it, look at the list silly head.
 	--if strSender == nil or strSender == GameLib.GetPlayerUnit():GetName() then return end
-	if strSender == nil then return end
+	if tMessage.strSender == nil then return end
 	local eChannel = channelCurrent:GetType()
 	if not (eChannel == ChatSystemLib.ChatChannel_Whisper or eChannel == ChatSystemLib.ChatChannel_AccountWhisper) then return end
-	if #arMessageSegments == 0 or #arMessageSegments > 1 then return end
-	local strMessage = arMessageSegments[1].strText:lower()
+	if #tMessage.arMessageSegments == 0 or #tMessage.arMessageSegments > 1 then return end
+	local strMessage = tMessage.arMessageSegments[1].strText:lower()
 	if string.find( strMessage,"\!standing" ) then 
-		local strName = strSender
+		local strName = tMessage.strSender
 		Print("Looking for " .. strName)
 		self.EPGP_StandingsDB[strName][kStrStandings] = self.EPGP_StandingsDB[strName][kStrStandings] or {}
 		local stnd = self.EPGP_StandingsDB[strName][kStrStandings]
@@ -537,7 +624,7 @@ function EPGP:WhisperCommand( channelCurrent, bAutoResponse, bGM, bSelf, strSend
 		end 
 		if not stnd or stnd == nil then Print("[EPGP] stnd is nil or not there") end
 		stnd.Sent = stnd.Sent or nil
-		if (stnd.Sent == false or stnd.Sent == nil) and string.find( arMessageSegments[1].strText:lower(),"\!standing" ) then 
+		if (stnd.Sent == false or stnd.Sent == nil) then 
 			local tmpID = GameLib.GetServerTime()
 			stnd.TimeStamp = (tmpID.nMinute * 60) + tmpID.nSecond + 5
 			stnd.Sent = true 
@@ -551,10 +638,10 @@ function EPGP:WhisperCommand( channelCurrent, bAutoResponse, bGM, bSelf, strSend
 		end
 	elseif string.find( strMessage,"\!bid" ) then
 		if self.currentItemSelected == nil then return end
-		if self:IsInGroup(strSender) then -- they are in the group
-			self:auctionEnterItemBid( strSender )
+		if self:IsInGroup(tMessage.strSender) then -- they are in the group
+			self:auctionEnterItemBid( tMessage.strSender )
 		else 
-			ChatSystemLib.Command("/w " .. strSender .. " You are not in the group.")
+			ChatSystemLib.Command("/w " .. tMessage.Sender .. " You are not in the group.")
 		end
 	end
 end
@@ -712,7 +799,6 @@ function EPGP:OnAwardButton( wndHandler, wndControl, eMouseButton )
 	local amt = tonumber(wndControl:GetParent():FindChild("txtValue"):GetText())
 	local reason = wndControl:GetParent():FindChild("txtReason"):GetText()
 	self:GroupAwardEP( amt, reason )
-	self:generateStandingsGrid()
 end
 
 function EPGP:OnEPGPGridItemClick(wndControl, wndHandler, iRow, iCol, eClick)
@@ -863,7 +949,7 @@ function EPGP:CalculateLootItemCost()
 	return self.ItemGPCost -- Calculations on GP Cost are always done when you click the bid button
 end
 
-function EPGP:CalculateItemGPValue( tItemInfo )
+function EPGP:CalculateItemGPValue( tItem )
 	--[[ Threeks Formula:
 		( (B+( (Q-1)*2) ) * (100) ) * M
 		B = Base Item Level
@@ -878,7 +964,7 @@ function EPGP:CalculateItemGPValue( tItemInfo )
 		local itemQuality = eItem:GetItemQuality()
 		local slotName = eItem:GetSlotName()
 	--]]
-	local tItem = tItemInfo.itemDrop
+	--local tItem = tItemInfo.itemDrop
 	local B = tItem:GetPowerLevel()
 	local Q = tItem:GetItemQuality()
 	local convSlotNumberToName =
@@ -915,26 +1001,6 @@ function EPGP:CalculateItemGPValue( tItemInfo )
 
 end 
 
--- BidButton Functions
-function EPGP:OnBidButtonClick( wndHandler, wndControl, eMouseButton, nLastRelativeMouseX, nLastRelativeMouseY, bDoubleClick, bStopPropagation )
-	-- Here we grab the selected item in the master loot window, and pass that item information on to the
-	-- GP Calculation function
-	if self.currentItemSelected then 
-		-- If you click this we are stopping the roll. set self.Auction["Expires"] = 0
-		self.Auction["Expires"] = 0
-		return
-	end 
-	local lootTree = Apollo.GetAddon("GroupBag").wndGroupBag:FindChild("LootItemsTree")
-	local lootSelNode = lootTree:GetSelectedNode() -- Int of Node Selected
-	local lootItemData = lootTree:GetNodeData(lootSelNode) -- data of current selected node SHOULD be the itemData
-	--SendVarToRover("item",lootItemData)
-	local GPCost = self:CalculateItemGPValue(lootItemData)
-	self.currentItemSelected = lootItemData.itemDrop
-	self.ItemGPCost = GPCost
-	self:addItemToAuctionBlock(lootItemData) -- starts the auction timer
-	ChatSystemLib.Command("/party [ Item Bid Open ] :: [ GP Cost " .. self.ItemGPCost .. " ] :: [ Whisper with !bid to bid on it ]")
-end
-
 function EPGP:addItemToAuctionBlock(tItemInfo)
 	local strName = tItemInfo.itemDrop:GetName()
 	if not self.Auction then
@@ -950,6 +1016,54 @@ function EPGP:addItemToAuctionBlock(tItemInfo)
 
 end
 
+
+function EPGP:OnSortOrderChange(wndHandler, wndControl, eMouseButton)
+	-- Name to Index table
+	local ktSortIDX = {  ["Character"] = 1, ["EP"] = 2, ["GP"] = 3, ["PR"] = 4 }
+	-- Default sort is Ascending
+	local bAsc = true
+
+	-- If we are already sorting on this column, we are changing sort order
+	if self.wndOldSort == wndControl then
+		bAsc = not self.wndGrid:IsSortAscending()
+	else
+		-- Clear old sort sprite
+		if self.wndOldSort then
+			self.wndOldSort:FindChild("SortOrderIcon"):SetSprite("")
+		end
+		-- Set reference to current sort button
+		self.wndOldSort = wndControl
+	end
+	-- Set sort column to this button with the order as determined
+	self.nSortCol, self.bSortAsc = ktSortIDX[wndControl:GetName()], bAsc
+	self.wndGrid:SetSortColumn(self.nSortCol, bAsc)
+	-- Set appropriate sort sprite
+	wndControl:FindChild("SortOrderIcon"):SetSprite(bAsc and kStrSortUpSprite or kStrSortDownSprite)
+end
+
+function EPGP:ResizeGrid(wndGrid)
+    -- Get current width of the Grid
+    local nGridWidth = wndGrid:GetWidth()
+    -- Number of columns in grid
+    local nGCols = 4
+
+    -- Each column should have equal size
+    local nSize = math.floor(nGridWidth / nGCols)
+    -- But it may not divide by the number of columns equally, in which case we have a remainder
+    local nRemainder = nGridWidth - (nSize * nGCols)
+    -- Set the column size for all but the last one to our computed equal size
+    for iCol=1,(nGCols - 1) do
+	    wndGrid:SetColumnWidth(iCol, nSize)
+    end
+    -- Last column gets the same size plus any leftover
+    wndGrid:SetColumnWidth(nGCols, nSize + nRemainder)
+end
+function EPGP:OnCancelConfig( wndHandler, wndControl, eMouseButton )
+end
+
+function EPGP:OnResetConfigDefaults( wndHandler, wndControl, eMouseButton )
+end
+
 ---------------------------------------------------------------------------------------------------
 -- EPGPForm Functions
 ---------------------------------------------------------------------------------------------------
@@ -959,11 +1073,9 @@ function EPGP:OnImportExportButton( wndHandler, wndControl, eMouseButton, nLastR
 		self.wndImportExport:Destroy()
 	end 
 	
-	self.wndImportExport = Apollo.LoadForm(self.xmlDoc, "inoutForm", self.wndMain, self) 
+	self.wndImportExport = Apollo.LoadForm(self.xmlDoc, "PortForm", self.wndMain, self) 
 	self.wndImportExport:Show(true, true)
-	self.wndImportExport:ToFront()
-	
-	
+	self.wndImportExport:ToFront()	
 end
 
 function EPGP:OnFilterListCheck( wndHandler, wndControl, eMouseButton )
@@ -976,21 +1088,52 @@ function EPGP:OnFilterListUnCheck( wndHandler, wndControl, eMouseButton )
 	self:generateStandingsGrid()
 end
 
+function EPGP:OnEPGPSizeChanged( wndHandler, wndControl )
+	if wndHandler ~= wndControl then
+        return
+    end
+    -- Resize the Standings Grid
+    self:ResizeGrid(self.wndGrid)
+end
+
+function EPGP:OnConfigToggle( wndHandler, wndControl, eMouseButton )
+	local bShowWnd = self.wndMain:FindChild("ConfigButton"):IsChecked()
+	self.wndMain:FindChild("ConfigContainer"):Show(bShowWnd)
+end
+
+function EPGP:OnAwardReasonBtn( wndHandler, wndControl, eMouseButton )
+	local strNewReason = wndControl:GetText()
+	self.wndMain:FindChild("AwardReasonToggle"):SetText(strNewReason)
+	self.wndMain:FindChild("AwardListContainer"):Show(false)
+	self.wndMain:FindChild("OtherContainer"):Show(strNewReason == "Other")
+	self.wndMain:FindChild("AwardReasonToggle"):SetCheck(false)
+end
+
+function EPGP:OnAwardReasonToggle( wndHandler, wndControl, eMouseButton )
+	local bShowWnd = wndControl:IsChecked()
+	self.wndMain:FindChild("AwardListContainer"):Show(bShowWnd)
+end
+
+function EPGP:OnAwardEP( wndHandler, wndControl, eMouseButton )
+end
+
 ---------------------------------------------------------------------------------------------------
--- inoutForm Functions
+-- PortForm Functions
 ---------------------------------------------------------------------------------------------------
 
 function EPGP:OnExportDBClick( wndHandler, wndControl, eMouseButton )
-	wndHandler:GetParent():FindChild("txtData"):SetText( self:exportEPGP( 1 ) )
+	self.wndImportExport:FindChild("txtData"):SetText( self:exportEPGP( 1 ) )
 end
 
 function EPGP:OnImportDBClick( wndHandler, wndControl, eMouseButton )
-	self:importEPGP( wndHandler:GetParent():FindChild("txtData"):GetText() )
-	wndHandler:GetParent():Destroy()
+	self:importEPGP( self.wndImportExport:FindChild("txtData"):GetText() )
+	self.wndImportExport:Destroy()
+end
+
+function EPGP:OnPortCloseBtn( wndHandler, wndControl, eMouseButton )
+	self.wndImportExport:Destroy()
 end
 
 -- EPGP Instance
 local EPGPInst = EPGP:new()
 EPGPInst:Init()
-
-
