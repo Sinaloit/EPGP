@@ -762,8 +762,8 @@ function EPGP:DecayEPGP()
 		if not self.EPGP_StandingsDB[k][kStrStandings] then
 			self.EPGP_StandingsDB[k][kStrStandings] = { EP = self.Config.nMinEP, GP = self.Config.nBaseGP }
 		end
-		self.EPGP_StandingsDB[k][kStrStandings].EP = self.EPGP_StandingsDB[k][kStrStandings].EP * (1 - (self.Config.nDecayPerc / 100.0) 
-		self.EPGP_StandingsDB[k][kStrStandings].GP = self.EPGP_StandingsDB[k][kStrStandings].GP * (1 - (self.Config.nDecayPerc / 100.0)
+		self.EPGP_StandingsDB[k][kStrStandings].EP = self.EPGP_StandingsDB[k][kStrStandings].EP * (1 - (self.Config.nDecayPerc / 100.0))
+		self.EPGP_StandingsDB[k][kStrStandings].GP = self.EPGP_StandingsDB[k][kStrStandings].GP * (1 - (self.Config.nDecayPerc / 100.0))
 	end 
 	self:GenerateStandingsGrid()
 end 
