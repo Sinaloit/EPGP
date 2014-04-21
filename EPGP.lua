@@ -22,6 +22,10 @@ require "Window"
 
 -- EPGP Module Definition
 local EPGP = {}
+
+EPGP.L = Apollo.GetPackage("GeminiLocale-1.0").tPackage:GetLocale("EPGP", false)
+local L = EPGP.L
+
 local MenuToolTipFont_Header = "CRB_Pixel_O"
 local MenuToolTipFont = "CRB_Pixel" 
 local MenuToolTipFont_Help = "CRB_InterfaceSmall_I"
@@ -29,9 +33,42 @@ local kStrStandings = "Standings"
 local kStrSortDownSprite = "HologramSprites:HoloArrowDownBtnFlyby"
 local kStrSortUpSprite = "HologramSprites:HoloArrowUpBtnFlyby"
 local ktAwardReasons = {
-	"Genetic Archives",
-	"Datascape",
+	["Genetic Archives"] = {
+		"Gene: Experiment X-89",
+		"Gene: Kuralak the Defiler",
+		"Gene: Phage Maw",
+		"Gene: Phagetech Prototypes",
+		"Gene: Phageborn Convergence",
+		"Gene: Dreadphage Ohmna",
+	},
+	["Datascape"] = {
+		"Data: System Daemons",
+		"Data: Gloomclaw",
+		"Data: Maelstrom Authority",
+		"Data: Elementals",
+		"Data: Avatus",
+	},
+	["SotS"] = true,
 }
+
+function strsplit(strDelimiter, strText)
+	local tList = {}
+	local nPos = 1
+	if string.find("", strDelimiter, 1) then -- this would result in endless loops
+		error("delimiter matches empty string!")
+	end
+	while 1 do
+		local nFirst, nLast = string.find(strText, strDelimiter, nPos)
+		if nFirst then -- found?
+			table.insert(tList, string.sub(strText, nPos, nFirst-1))
+			nPos = nLast+1
+		else
+			table.insert(tList, string.sub(strText, nPos))
+			break
+		end
+	end
+	return tList
+end
 
 function EPGP:new(o)
     o = o or {}
@@ -49,46 +86,41 @@ end
 
 -- EPGP OnLoad
 function EPGP:OnLoad()
-	self.EPGP_LogDB = {}
 	self.EPGP_StandingsDB = {}
-	self.EPGP_GroupsDB = {}
 	self.Config = {}
 	self.FilterList = false
+
     -- load our form file
 	self.xmlDoc = XmlDoc.CreateFromFile("EPGP.xml")
+
+	-- Main EPGP Form
 	self.wndMain = Apollo.LoadForm(self.xmlDoc, "EPGPForm", nil, self)
 	if self.wndMain == nil then
 		Apollo.AddAddonErrorText(self, "Could not load the main window for some reason.")
 		return Apollo.AddonLoadStatus.LoadingError
 	end
 	
+	-- Standings Grid and associated variables
 	self.wndGrid = self.wndMain:FindChild("grdStandings")
-	self.nSortCol = 1
+	-- PR is the initially selected sort method
+	self.wndOldSort = self.wndMain:FindChild("PR")
+	self.nSortCol = 4
 	self.bSortAsc = false
 
-	self.wndMassAwardEP = Apollo.LoadForm(self.xmlDoc, "MassAwardEPForm", nil, self)
-	if self.wndMassAwardEP == nil then
-		Apollo.AddAddonErrorText(self, "Could not load the main window for some reason.")
-		return Apollo.AddonLoadStatus.LoadingError
-	end
-	
-    self.wndMassAwardEP:Show(false, true)
-
+	-- Configuration Form
     self.wndEPGPConfigForm = Apollo.LoadForm(self.xmlDoc, "EPGPConfigForm", nil, self)
 	if self.wndEPGPConfigForm == nil then
 		Apollo.AddAddonErrorText(self, "Could not load the main window for some reason.")
 		return Apollo.AddonLoadStatus.LoadingError
 	end
 	
-    self.wndEPGPConfigForm:Show(false, true)
-
+	-- Status Button
     self.wndEPGPMenu = Apollo.LoadForm(self.xmlDoc, "EPGPMenu", nil, self)
 	if self.wndEPGPMenu == nil then
 		Apollo.AddAddonErrorText(self, "Could not load the main window for some reason.")
 		return Apollo.AddonLoadStatus.LoadingError
 	end
 	
-    self.wndEPGPMenu:Show(true, true)
     -- Register Slash Commands
 	Apollo.RegisterSlashCommand("epgp", "OnEPGPOn", self)
 	Apollo.RegisterSlashCommand("epgpreset", "OnEPGPReset", self)
@@ -98,35 +130,156 @@ function EPGP:OnLoad()
 	-- Register Events
 	Apollo.RegisterEventHandler("GuildRoster", "OnGuildRoster", self)
 	Apollo.RegisterEventHandler("ChatMessage", "WhisperCommand", self)
-	Apollo.RegisterEventHandler("Group_Join", "OnGroupJoin", self) 
-	
-	--Apollo.RegisterTimerHandler("TimerCheckAuctionExpired","TimerCheckAuctionExpired", self)
+	Apollo.RegisterEventHandler("Group_Join", "OnGroupJoin", self)
+	-- Used to obtain a reference to the characters Guild
+	Apollo.RegisterEventHandler("UnitCreated", "OnUnitCreated", self)
+	-- When the Guild Info is updated we need to import any changes
+	Apollo.RegisterEventHandler("GuildInfoMessage", "OnGuildInfoMessage", self)
+	-- Notification that a guild was added/removed
+	Apollo.RegisterEventHandler("GuildChange", "OnGuildChange", self)
 	
 	--self:SetSyncChannel()
-	--self:ToggleButtonStatus()
-	
-	self.wndOldSort = self.wndMain:FindChild("Character")
 	self:SetupAwards()
 	-- Setup Hooks
 	self:RegisterHooks()
 end
 
+function EPGP:OnGuildInfoMessage(guildOwner)
+	if self.tGuild == guildOwner then
+		self:ImportGuildConfig()
+	end
+end
+
+function EPGP:OnGuildChange()
+	for key, tGuildItem in pairs(GuildLib.GetGuilds()) do
+		if tGuildItem:GetType() == GuildLib.GuildType_Guild then
+			-- We changed guilds...
+			if tGuildItem ~= self.tGuild then
+				return
+			end
+		end
+	end
+	-- No Guild Found
+	self.tGuild = nil
+end
+
+function EPGP:OnUnitCreated()
+	self.tGuild = nil
+	for key, tGuildItem in pairs(GuildLib.GetGuilds()) do
+		if tGuildItem:GetType() == GuildLib.GuildType_Guild then
+			self.tGuild = tGuildItem
+		end
+	end
+	if self.tGuild ~= nil then
+		Apollo.RemoveEventHandler("UnitCreated", self)
+		self:ImportGuildConfig()
+	end
+end
+
+function EPGP:ImportGuildConfig()
+	local strGuildInfo = self.tGuild:GetInfoMessage()
+
+	local tConfigDefs = {
+		nDecayPerc = {
+			pattern = "@DECAY_P:(%d+)",
+			parser = tonumber,
+			validator = function(v) return v >= 0 and v <= 100 end,
+			error = L["Decay Percent should be a number between 0 and 100"],
+			default = 0,
+			change_message = "DecayPercentChanged",
+		},
+		nExtrasPerc = {
+			pattern = "@EXTRAS_P:(%d+)",
+			parser = tonumber,
+			validator = function(v) return v >= 0 and v <= 100 end,
+			error = L["Extras Percent should be a number between 0 and 100"],
+			default = 100,
+			change_message = "ExtrasPercentChanged",
+		},
+		nMinEP = {
+			pattern = "@MIN_EP:(%d+)",
+			parser = tonumber,
+			validator = function(v) return v >= 0 end,
+			error = L["Min EP should be a positive number"],
+			default = 0,
+			change_message = "MinEPChanged",
+		},
+		nBaseGP = {
+			pattern = "@BASE_GP:(%d+)",
+			parser = tonumber,
+			validator = function(v) return v >= 0 end,
+			error = L["Base GP should be a positive number"],
+			default = 1,
+			change_message = "BaseGPChanged",
+		},
+		bOutsiders = {
+			pattern = "@OUTSIDERS:(%d+)",
+			parser = tonumber,
+			validator = function(v) return v == 0 or v == 1  end,
+			error = L["Outsiders should be 0 or 1"],
+			default = 0,
+			change_message = "OutsidersChanged",
+		},
+	}
+	if not strGuildInfo then
+		return
+	end
+
+	local strLines = strsplit("\n", strGuildInfo)
+	local bInBlock = false
+	local tNewConfig = {}
+
+	for _,strLine in pairs(strLines) do
+		if strLine == "-EPGP-" then
+			bInBlock = not bInBlock
+		elseif bInBlock then
+			for var, tDef in pairs(tConfigDefs) do
+				local var = strLine:match(tDef.pattern)
+				if v then
+					v = tDef.parser(var)
+					if v == nil or not tDef.validator(v) then
+						-- Log an Error
+					else
+						tNewConfig[var] = v
+					end
+				end
+			end
+		end
+	end
+
+	for var, tDef in pairs(tConfigDefs) do
+		local nOldValue = self.Config[var]
+		self.Config[var] = tNewConfig[var] or tDef.default
+		if nOldValue ~= self.Config[var] then
+			-- Ace Stuff, callbacks not implemented currently
+			--EPGP.callbacks:Fire(tDef.change_message, EPGP.db.profile[var])
+		end
+	end
+end
+
 function EPGP:SetupAwards()
 	local wndContainer = self.wndMain:FindChild("AwardListBtns")
 	local nCount = 1
-	for i,k in pairs(ktAwardReasons) do
-		local wndAwardBtn = Apollo.LoadForm(self.xmlDoc,"AwardReasonButton", wndContainer, self)
-		wndAwardBtn:SetText(k)
-		nCount = nCount + 1
+	for strLocation, value in pairs(ktAwardReasons) do
+		if type(strLocation) == "string" then
+			local wndAwardBtn = Apollo.LoadForm(self.xmlDoc,"AwardReasonButton", wndContainer, self)
+			wndAwardBtn:FindChild("AwardBtnText"):SetText(strLocation)
+			if type(value) == "table" then
+				wndAwardBtn:FindChild("BtnArrow"):Show(true)
+				wndAwardBtn:SetData(value)
+			end
+			nCount = nCount + 1
+		end
 	end
 	local wndAwardBtn = Apollo.LoadForm(self.xmlDoc,"AwardReasonButton", wndContainer, self)
-	wndAwardBtn:SetText("Other")
-	wndContainer:ArrangeChildrenVert(2)
+	wndAwardBtn:FindChild("AwardBtnText"):SetText("Other")
+	wndContainer:ArrangeChildrenVert(0)
 	local nLeft, nTop, nRight, nBottom = wndContainer:GetParent():GetAnchorOffsets()
-	wndContainer:GetParent():SetAnchorOffsets(nLeft, nTop, nRight, nBottom + (nCount * 22))
+	wndContainer:GetParent():SetAnchorOffsets(nLeft, nTop, nRight, nBottom + (nCount * 25) + 36)
+	self:ToggleOtherReason(true)
 end
 
-local function SortByPR(a, b)
+local function SortByValue(a, b)
 	local aPR = a:FindChild("Value"):GetText()
 	local bPR = b:FindChild("Value"):GetText()
 
@@ -148,12 +301,14 @@ function EPGP:RegisterHooks()
 	local fnOldOnItemCheck = tMasterLoot.OnItemCheck
 	tMasterLoot.OnItemCheck = function(tMLoot, wndHandler, wndControl, eMouseButton)
 		fnOldOnItemCheck(tMLoot, wndHandler, wndControl, eMouseButton)
-		for idx, wndLooter in pairs(tMLoot.wndMasterLoot:FindChild("LooterList"):GetChildren()) do
-			local wndOverlay = Apollo.LoadForm(tEPGP.xmlDoc, "EPGPOverlay", wndLooter, tEPGP)
-			wndOverlay:FindChild("Label"):SetText("PR")
-			wndOverlay:FindChild("Value"):SetText(string.format("%.2f",tEPGP:GetPR(wndLooter:FindChild("CharacterName"):GetText())))
+		if tMLoot.wndMasterLoot ~= nil then
+			for idx, wndLooter in pairs(tMLoot.wndMasterLoot:FindChild("LooterList"):GetChildren()) do
+				local wndOverlay = Apollo.LoadForm(tEPGP.xmlDoc, "EPGPOverlay", wndLooter, tEPGP)
+				wndOverlay:FindChild("Label"):SetText("PR")
+				wndOverlay:FindChild("Value"):SetText(string.format("%.2f",tEPGP:GetPR(wndLooter:FindChild("CharacterName"):GetText())))
+			end
+			tMLoot.wndMasterLoot:FindChild("LooterList"):ArrangeChildrenVert(0, SortByValue)
 		end
-		tMLoot.wndMasterLoot:FindChild("LooterList"):ArrangeChildrenVert(0, SortByPR)
 	end
 	-- Display GP Cost for Master Looter
 	local fnOldMasterLootHelper = tMasterLoot.MasterLootHelper
@@ -194,26 +349,9 @@ function EPGP:getLeader()
 	end 
 end 
 
-function EPGP:MakeItRain( strPassword )
-	local reversePassword = string.reverse(strPassword)
-	local key = ""
-	for i = 1, #strPassword do
-    	local c = strPassword:sub(i,i)
-		local d = reversePassword:sub(i,i)
-		key = key .. c .. d
-		--[[ Sample
-			pass: manatarms
-			reverse: smratanam
-			key: msamnraattaarnmasm
-		--]]
-	end
-	return key
-end
-
 -- EPGP Functions
 function EPGP:Timer_RecurringEPAward()
-	--self:EPGP_AwardEP( 15 )
-	self:GroupAwardEP( tonumber(self.Config.RecurringEP), "Recurring EP" )
+	self:GroupAwardEP(self.nRecurringAward, self.strRecurringReason)
 end 
 
 function EPGP:GroupAwardEP( amt, reason )
@@ -223,12 +361,12 @@ function EPGP:GroupAwardEP( amt, reason )
 	end 
 	for k,v in pairs(tGroup) do
 		self.EPGP_StandingsDB[v] = self.EPGP_StandingsDB[v] or {}
-		self.EPGP_StandingsDB[v][kStrStandings] = self.EPGP_StandingsDB[v][kStrStandings] or { EP = self.Config.MinEP, GP = self.Config.BaseGP }
+		self.EPGP_StandingsDB[v][kStrStandings] = self.EPGP_StandingsDB[v][kStrStandings] or { EP = self.Config.nMinEP, GP = self.Config.nBaseGP }
 		self.EPGP_StandingsDB[v][kStrStandings].EP = tonumber(self.EPGP_StandingsDB[v][kStrStandings].EP) + tonumber(amt)
 	end 
 
-	ChatSystemLib.Command("/p [Mass Award] Awarded Mass Group EP ( "..amt.." ) [ "..reason.."]")
-	self:generateStandingsGrid()
+	ChatSystemLib.Command("/p [Mass Award] ( "..amt.."EP ) [ "..reason.."]")
+	self:GenerateStandingsGrid()
 end 
 
 function EPGP:IsInGroup( strPlayer )
@@ -244,11 +382,11 @@ function EPGP:IsInGroup( strPlayer )
 end
 
 function EPGP:EPGP_AwardEP( strCharName, amtEP, amtGP )
-	local EP = self.EPGP_StandingsDB[strCharName][kStrStandings].EP or self.Config.MinEP
-	local GP = self.EPGP_StandingsDB[strCharName][kStrStandings].GP or self.Config.BaseGP
+	local EP = self.EPGP_StandingsDB[strCharName][kStrStandings].EP or self.Config.nMinEP
+	local GP = self.EPGP_StandingsDB[strCharName][kStrStandings].GP or self.Config.nBaseGP
 	self.EPGP_StandingsDB[strCharName][kStrStandings].EP = EP + amtEP
 	self.EPGP_StandingsDB[strCharName][kStrStandings].GP = GP + amtGP
-	self:generateStandingsGrid()
+	self:GenerateStandingsGrid()
 end 
 
 function EPGP:AwardItem(tCharacter, tItem)
@@ -305,17 +443,18 @@ function EPGP:exportEPGP( iFormat )
 	end 
 	return retVal
 end
+
 local function explode(inputstr, sep)
-	        if sep == nil then
-                sep = "%s"
-        end
-        local t = {}
-		local i = 1
-        for str in string.gmatch(inputstr, "([^"..sep.."]+)") do
-                t[i] = str
-                i = i + 1
-        end
-        return t
+	if sep == nil then
+		sep = "%s"
+	end
+	local t = {}
+	local i = 1
+	for str in string.gmatch(inputstr, "([^"..sep.."]+)") do
+		t[i] = str
+		i = i + 1
+	end
+	return t
 end
 
 function EPGP:importEPGP( tImportData )
@@ -338,16 +477,13 @@ function EPGP:importEPGP( tImportData )
 		self.EPGP_StandingsDB[strName] = {}
 		self.EPGP_StandingsDB[strName][kStrStandings] = { EP = strEP, GP = strGP }
 	end
-	self:generateStandingsGrid()
+	self:GenerateStandingsGrid()
 	Print("[EPGP] DB Imported")
 end
 
 -- on SlashCommand "/epgp"
 function EPGP:OnEPGPOn()
 	self.wndMain:Show(true) -- show the window
-	--self:Top10List() -- Generate Top 10 List
-	--self:GetRanking( "Fuzzrig" ) -- Testing Top 10 List
-	
 end
 
 -- EPGPForm Functions
@@ -360,7 +496,7 @@ function EPGP:OnSave(eLevel)
 		return 
 	end
 	
-	return { db = self.EPGP_StandingsDB, log = self.EPGP_LogDB, groups = self.EPGP_GroupsDB, config = self.Config }
+	return { db = self.EPGP_StandingsDB, config = self.Config }
 end
 
 function EPGP:OnRestore(eLevel, tSavedData)
@@ -368,17 +504,8 @@ function EPGP:OnRestore(eLevel, tSavedData)
 		return
 	end
 	
-	self.EPGP_LogDB = tSavedData.log or {}
 	self.EPGP_StandingsDB = tSavedData.db or {}
-	self.EPGP_GroupsDB = tSavedData.groups or {}
 	self.Config = tSavedData.config or {}
-end
-
-function EPGP:OnMassAwardPress( wndHandler, wndControl, eMouseButton )
-	if GroupLib.GetMemberCount() == 0 then Print("[EPGP] Error: You Are Not In A Group.") return end 
-	if GameLib.GetPlayerUnit():GetGuildName() == nil then Print("[EPGP] Error: You Are Not In A Guild.") return end 
-	self.wndMassAwardEP:Show(true)
-	self.wndMassAwardEP:ToFront()
 end
 
 function EPGP:OnSingleItemAward( wndHandler, wndControl, eMouseButton )
@@ -400,52 +527,21 @@ function EPGP:OnSingleItemAward( wndHandler, wndControl, eMouseButton )
 			self:EPGP_AwardEP(strName,0,10)
 		end 
 	end 
-	self:generateStandingsGrid()
 end
-
-function EPGP:OnRefreshList( wndHandler, wndControl, eMouseButton )
-	self:generateStandingsGrid()
-end
-
-function EPGP:ToggleButtonStatus()
-	local buttonArray = { "txtLate",
-						  "txtOnTime",
-						  "txtStandby",
-						  "btnRecvLoot",
-						  "btnDecay",
-						  "btnMassAward"
-						}
-	if GroupLib.GetMemberCount() == 0 then 
-		for idx = 1, #buttonArray do
-			self.wndMain:FindChild( buttonArray[idx] ):Enable(false)
-		end 
-	else 
-		for idx = 1, #buttonArray do
-			self.wndMain:FindChild( buttonArray[idx] ):Enable(true)
-		end 
-	end 
-
-end 
 
 function EPGP:OnConfigure()
-	if self.Config == nil then 
-		self.Config.MinEP = "10"
-		self.Config.BaseGP = "15"
-		self.Config.EPGPDecay = "20"
-		self.Config.RecurringEP = "15"
-	end 
-	self.wndEPGPConfigForm:FindChild("txtMinEP"):SetText(self.Config.MinEP or "10")
-	self.wndEPGPConfigForm:FindChild("txtBaseGP"):SetText(self.Config.BaseGP or "15")
-	self.wndEPGPConfigForm:FindChild("txtDecay"):SetText(self.Config.EPGPDecay or "20")
-	self.wndEPGPConfigForm:FindChild("txtRecurringEP"):SetText(self.Config.RecurringEP or "15")
+	self.wndEPGPConfigForm:FindChild("MinEPValue"):SetText(self.Config.nMinEP)
+	self.wndEPGPConfigForm:FindChild("BaseGPValue"):SetText(self.Config.nBaseGP)
+	self.wndEPGPConfigForm:FindChild("DecayValue"):SetText(self.Config.nDecayPerc)
+	self.wndEPGPConfigForm:FindChild("ExtrasValue"):SetText(self.Config.nExtrasPerc)
+	self.wndEPGPConfigForm:FindChild("OutsidersCheck"):SetCheck(self.Config.bOutsiders == 1)
+	self.wndEPGPConfigForm:FindChild("OutsidersCheck"):Enable(false)
 	-- Individual Awards
+	--[[
 	if self.Config.tEPGPCosts == nil then 
 		self.Config.tEPGPCosts = {}
-		self.Config.tEPGPCosts["OnTime"] = {}
 		self.Config.tEPGPCosts["OnTime"] = { EP = "5", GP = "0" }
-		self.Config.tEPGPCosts["Late"] = {}
 		self.Config.tEPGPCosts["Late"] = { EP = "0", GP = "5" }
-		self.Config.tEPGPCosts["Standby"] = {}
 		self.Config.tEPGPCosts["Standby"] = { EP = "15", GP = "0" }
 	end
 	self.wndEPGPConfigForm:FindChild("txtOnTimeEP"):SetText(self.Config.tEPGPCosts["OnTime"].EP)
@@ -454,32 +550,18 @@ function EPGP:OnConfigure()
 	self.wndEPGPConfigForm:FindChild("txtLateGP"):SetText(self.Config.tEPGPCosts["Late"].GP)
 	self.wndEPGPConfigForm:FindChild("txtStandbyEP"):SetText(self.Config.tEPGPCosts["Standby"].EP)
 	self.wndEPGPConfigForm:FindChild("txtStandbyGP"):SetText(self.Config.tEPGPCosts["Standby"].GP)
-
+	--]]
 	self.wndEPGPConfigForm:Show(true)
 	self.wndEPGPConfigForm:ToFront()
 end
 
-function EPGP:SetSortColumn( wndHandler, wndControl, eMouseButton, nLastRelativeMouseX, nLastRelativeMouseY, bDoubleClick, bStopPropagation )
-	-- Whatever you click, set the sort column
-	local ColumnSortKey = { ["Character"] = 1, ["EP"] = 2, ["GP"] = 3, ["PR"] = 4 }
-	local lblText = wndControl:GetText()
-	--self:generateStandingsGrid()
-	self.SortColumn = ColumnSortKey[lblText]
-	--self.wndMain:FindChild("grdStandings"):SetSortColumn( ColumnSortKey[lblText] )
-end
-
 -- EPGPMenu Functions
 function EPGP:OnMouseOverMenu( wndHandler, wndControl, eToolTipType, x, y )
-	self.Config.MinEP = self.Config.MinEP or "10"
-	self.Config.BaseGP = self.Config.BaseGP or "15"
-	self.Config.EPGPDecay = self.Config.EPGPDecay or "20"
-	self.Config.RecurringEP = self.Config.RecurringEP or "15"
 	-- Set Tooltip for Main Menu Hover
 	local strToolTip = string.format("<P Font=\""..MenuToolTipFont_Header.."\" TextColor=\"%s\">%s</P>", "white","EPGP")
-	strToolTip = strToolTip .. string.format("<P Font=\""..MenuToolTipFont.."\" TextColor=\"%s\">%s</P>", "yellow", "MinEP="..self.Config.MinEP)
-	strToolTip = strToolTip .. string.format("<P Font=\""..MenuToolTipFont.."\" TextColor=\"%s\">%s</P>", "yellow", "BaseGP="..self.Config.BaseGP)
-	strToolTip = strToolTip .. string.format("<P Font=\""..MenuToolTipFont.."\" TextColor=\"%s\">%s</P>", "yellow", "Decay="..string.format("%.0f %%",self.Config.EPGPDecay))
-	strToolTip = strToolTip .. string.format("<P Font=\""..MenuToolTipFont.."\" TextColor=\"%s\">%s</P>", "yellow", "RecurringEP="..self.Config.RecurringEP)
+	strToolTip = strToolTip .. string.format("<P Font=\""..MenuToolTipFont.."\" TextColor=\"%s\">%s</P>", "yellow", "MinEP="..self.Config.nMinEP)
+	strToolTip = strToolTip .. string.format("<P Font=\""..MenuToolTipFont.."\" TextColor=\"%s\">%s</P>", "yellow", "BaseGP="..self.Config.nBaseGP)
+	strToolTip = strToolTip .. string.format("<P Font=\""..MenuToolTipFont.."\" TextColor=\"%s\">%s</P>", "yellow", "Decay="..string.format("%.0f %%", self.Config.nDecayPerc))
 	strToolTip = strToolTip .. "\r\n\r\n"
 	strToolTip = strToolTip .. string.format("<P Font=\""..MenuToolTipFont_Help.."\" TextColor=\"%s\">%s</P>", "green", "(Right-Click To Open Standings)")
 	strToolTip = strToolTip .. string.format("<P Font=\""..MenuToolTipFont_Help.."\" TextColor=\"%s\">%s</P>", "green", "(ToeNail-Click To Open Config)")
@@ -487,7 +569,7 @@ function EPGP:OnMouseOverMenu( wndHandler, wndControl, eToolTipType, x, y )
 end
 
 function EPGP:OnEPGPMenuMouseClick( wndHandler, wndControl, eMouseButton, nLastRelativeMouseX, nLastRelativeMouseY, bDoubleClick, bStopPropagation )
-	if eMouseButton == 1 then
+	if eMouseButton == GameLib.CodeEnumInputMouse.Right then
 		self.bGenerateStandingsGrid = true
 		self:RefreshGuildRoster()
 	end
@@ -501,25 +583,25 @@ function EPGP:OnGuildRoster(guildCurr, tRoster) -- Event from CPP
 	
 	if self.bGenerateStandingsGrid then
 		self.bGenerateStandingsGrid = nil
-	  self:generateStandingsGrid()
-	  self.wndMain:Show( not self.wndMain:IsVisible() )
+		self:GenerateStandingsGrid()
+		self.wndMain:Show( not self.wndMain:IsVisible() )
 	end
 end
 
 function EPGP:RefreshGuildRoster()
-	if self.guildCurr == nil then
+	if self.tGuild == nil then
 		for i, guildCurr in ipairs(GuildLib.GetGuilds()) do
 			if guildCurr:GetType() == GuildLib.GuildType_Guild then
-				self.guildCurr = guildCurr
+				self.tGuild = guildCurr
 				break
 			end
 		end
 	end
-	if self.guildCurr == nil then return end -- nothing we can do.  the player isn't in a guild shouldn't even get this far.
-	self.guildCurr:RequestMembers()
+	if self.tGuild == nil then return end -- nothing we can do.  the player isn't in a guild shouldn't even get this far.
+	self.tGuild:RequestMembers()
 end 
 
-function EPGP:generateStandingsGrid()
+function EPGP:GenerateStandingsGrid()
 	local grdList = self.wndGrid
 	local nGuildCount = 0 -- count of guild members
 	
@@ -534,7 +616,7 @@ function EPGP:generateStandingsGrid()
 		for i=1,GroupLib.GetMemberCount() do
 			v = GroupLib.GetUnitForGroupMember(i):GetName()
 			self.EPGP_StandingsDB[v] = self.EPGP_StandingsDB[v] or {}
-			self.EPGP_StandingsDB[v][kStrStandings] = self.EPGP_StandingsDB[v][kStrStandings] or { EP = self.Config.MinEP, GP = self.Config.BaseGP }
+			self.EPGP_StandingsDB[v][kStrStandings] = self.EPGP_StandingsDB[v][kStrStandings] or { EP = self.Config.nMinEP, GP = self.Config.nBaseGP }
 		end
 	end 
 
@@ -586,14 +668,15 @@ function EPGP:GetPR(strName)
 end
 
 function EPGP:GetEP(strName)
-	local EP = self.EPGP_StandingsDB[strName][kStrStandings].EP or self.Config.MinEP
+	local EP = self.EPGP_StandingsDB[strName][kStrStandings].EP or self.Config.nMinEP
 	return EP
 end
 
 function EPGP:GetGP(strName)
-	local GP = self.EPGP_StandingsDB[strName][kStrStandings].GP or self.Config.BaseGP
+	local GP = self.EPGP_StandingsDB[strName][kStrStandings].GP or self.Config.nBaseGP
 	return GP
 end 
+
 function EPGP:OnGroupJoin( strName, nId)
 	
 end 
@@ -617,10 +700,10 @@ function EPGP:WhisperCommand(channelCurrent, tMessage)
 		self.EPGP_StandingsDB[strName][kStrStandings] = self.EPGP_StandingsDB[strName][kStrStandings] or {}
 		local stnd = self.EPGP_StandingsDB[strName][kStrStandings]
 		if stnd.EP == nil then 
-		stnd.EP = self.Config.MinEP
+		stnd.EP = self.Config.nMinEP
 		end 
 		if stnd.GP == nil then
-		stnd.GP = self.Config.BaseGP
+		stnd.GP = self.Config.nBaseGP
 		end 
 		if not stnd or stnd == nil then Print("[EPGP] stnd is nil or not there") end
 		stnd.Sent = stnd.Sent or nil
@@ -630,108 +713,14 @@ function EPGP:WhisperCommand(channelCurrent, tMessage)
 			stnd.Sent = true 
 			local PR = string.format("%.2f",stnd.EP / stnd.GP)
 			ChatSystemLib.Command("/w " .. strName .. " ( [ep] " .. stnd.EP .. " [gp] " .. stnd.GP .. " [pr] " .. PR .. " )")
-			self:generateStandingsGrid()
+			self:GenerateStandingsGrid()
 		end 
 		local newTime = GameLib.GetServerTime()
 		if stnd.TimeStamp < ((newTime.nMinute * 60) + newTime.nSecond) then
 			stnd.Sent = false
 		end
-	elseif string.find( strMessage,"\!bid" ) then
-		if self.currentItemSelected == nil then return end
-		if self:IsInGroup(tMessage.strSender) then -- they are in the group
-			self:auctionEnterItemBid( tMessage.strSender )
-		else 
-			ChatSystemLib.Command("/w " .. tMessage.Sender .. " You are not in the group.")
-		end
 	end
 end
-function EPGP:calculateAuctionWinner()
-	local winner = ""
-	local tieList = {}
-	local winnerPR = 0
-	--SendVarToRover("Bidders", self.Auction["Bidders"])
-	
-	for idx = 1, #self.Auction["Bidders"] do
-		--local playerPR = GetStandings(strPlayerName)
-		local tStnd = self.EPGP_StandingsDB
-		if tStnd == nil then return winner end 
-		for k, tSamplePlayer in pairs(tStnd) do
-			local tPlayerStandings = tSamplePlayer[kStrStandings]
-			if string.lower(k) == string.lower(self.Auction["Bidders"][idx]) then  -- Matching Name
-				EP = tPlayerStandings.EP
-				GP = tPlayerStandings.GP
-				PR = ( tPlayerStandings.EP / tPlayerStandings.GP)
-				if winnerPR == PR then 
-					table.insert(tieList,winner)
-					table.insert(tieList,k)
-					winner = ""
-					winnerPR = PR
-				elseif winnerPR < PR then 
-					winner = k 
-					winnerPR = PR 
-				end
-			end
-		end
-	end
-	-- end of bidders
-	if #tieList == 0 then return winner end
-	-- there is a tie, randomize lulz
-	self.Auction = nil
-	return tieList[ math.random(1,#tieList) ]
-end
-
-function EPGP:TimerCheckAuctionExpired() 
-	local tAucItem = self.currentItemSelected
-	local tAucItemChatLink = tAucItem:GetChatLinkString()
-	local tAucName = tAucItem:GetName()
-	local auctionBlock = self.Auction
-	local winnerName = self:calculateAuctionWinner()
-	if self.Auction["Expires"] == 0 then 
-		-- Expired
-		--self.Auction = nil
-		ChatSystemLib.Command("/party [ Auction Timer ] {" .. tAucItemChatLink.."} [ Bidding Has Ended ]")
-		Apollo.StopTimer("TimerCheckAuctionExpired")
-		ChatSystemLib.Command("/party [ {" ..tAucItemChatLink.."} ] :: Winner " .. winnerName .. "! Conglaturations!")
-		self.Auction = nil 
-		self.currentItemSelected = nil
-		-- Request: Auto-Select name in grid list :)
-		local grdList = self.wndMain:FindChild("grdStandings")
-		grdList:SelectCellByData(winnerName)
-	elseif self.Auction["Expires"] == 10 then 
-		self.Auction["Expires"] = 0
-		Apollo.CreateTimer("TimerCheckAuctionExpired", 10, false)
-		Apollo.StartTimer("TimerCheckAuctionExpired")	
-		ChatSystemLib.Command("/party [ Auction Timer ] {" .. tAucItemChatLink.."} [ ~10 seconds remaining ]")
-	elseif self.Auction["Expires"] == 15 then 
-		self.Auction["Expires"] = 10
-		Apollo.CreateTimer("TimerCheckAuctionExpired", 15, false)
-		Apollo.StartTimer("TimerCheckAuctionExpired")	
-		ChatSystemLib.Command("/party [ Auction Timer ] {" .. tAucItemChatLink.."} [ ~15 seconds remaining ]")
-	elseif self.Auction["Expires"] == 30 then	
-		self.Auction["Expires"] = 15
-		ChatSystemLib.Command("/party [ Auction Timer ] {" .. tAucItemChatLink.."} [ ~30 seconds remaining ]")
-		Apollo.CreateTimer("TimerCheckAuctionExpired", 30, false)
-		Apollo.StartTimer("TimerCheckAuctionExpired")	
-	end
-
-end
-
-function EPGP:auctionEnterItemBid( strPlayerName )
-	if self.Auction["Bidders"] == nil or self.Auction["Bidders"] == "" then
-		self.Auction["Bidders"] = {}
-		table.insert(self.Auction["Bidders"], strPlayerName)
-		ChatSystemLib.Command("/w " .. strPlayerName .. " Bid Accepted for {" .. self.currentItemSelected:GetChatLinkString() .. "}")
-	end
-	local bidderList = self.Auction["Bidders"]
-	
-	for _, v in pairs(bidderList) do
-		if v == strPlayerName then
-			return 
-		end
-	end
-	table.insert(self.Auction["Bidders"], strPlayerName)
-	ChatSystemLib.Command("/w " .. strPlayerName .. " Bid Accepted for {" .. self.currentItemSelected:GetChatLinkString() .. "}")
-end 
 
 function EPGP:ReportStanding(channelCurrent, 
 						bAutoResponse, 
@@ -755,7 +744,7 @@ function EPGP:ReportStanding(channelCurrent,
 		stnd.Sent = true 
 		local PR = string.format("%.2f",stnd.EP / stnd.GP)
 		ChatSystemLib.Command("/w " .. idx .. " ( [ep] " .. stnd.EP .. " [gp] " .. stnd.GP .. " [pr] " .. PR .. " )")
-		self:generateStandingsGrid()
+		self:GenerateStandingsGrid()
 	end 
 	local newTime = GameLib.GetServerTime()
 	if stnd.TimeStamp < ((newTime.nMinute * 60) + newTime.nSecond) then
@@ -768,57 +757,28 @@ end
 -- MassAwardEPForm Functions
 ---------------------------------------------------------------------------------------------------
 
-function EPGP:OnRecurringCheck( wndHandler, wndControl, eMouseButton )
-		local nDelay = tonumber(wndHandler:GetParent():FindChild("txtDelay"):GetText())
-		ChatSystemLib.Command("/p [Mass EP] Recurring Timer ( ".. self.Config.RecurringEP.." EP every " .. nDelay .. " minutes )")
-		Apollo.CreateTimer("RecurringEPAwardTimer", nDelay*60, true)
-		Apollo.StartTimer("RecurringEPAwardTimer")
-		self.wndEPGPMenu:SetText("EPGP: " .. self.wndMassAwardEP:FindChild("txtDelay"):GetText() .. " Min.")
-		self.wndEPGPMenu:SetTextColor("xkcdBrightYellowGreen")
-end
-
 function EPGP:DecayEPGP()
-	for k, val in pairs( self.EPGP_StandingsDB) do 
-		local EP = self.EPGP_StandingsDB[k][kStrStandings].EP / 1.20
-		local GP = self.EPGP_StandingsDB[k][kStrStandings].GP / 1.20		
-		self.EPGP_StandingsDB[k] = self.EPGP_StandingsDB[k] or {}
-		self.EPGP_StandingsDB[k][kStrStandings].EP = string.format("%.2f",self.EPGP_StandingsDB[k][kStrStandings].EP / 1.20) 
-		self.EPGP_StandingsDB[k][kStrStandings].GP = string.format("%.2f",self.EPGP_StandingsDB[k][kStrStandings].GP / 1.20)
+	for k, val in pairs(self.EPGP_StandingsDB) do
+		if not self.EPGP_StandingsDB[k][kStrStandings] then
+			self.EPGP_StandingsDB[k][kStrStandings] = { EP = self.Config.nMinEP, GP = self.Config.nBaseGP }
+		end
+		self.EPGP_StandingsDB[k][kStrStandings].EP = self.EPGP_StandingsDB[k][kStrStandings].EP * (1 - (self.Config.nDecayPerc / 100.0) 
+		self.EPGP_StandingsDB[k][kStrStandings].GP = self.EPGP_StandingsDB[k][kStrStandings].GP * (1 - (self.Config.nDecayPerc / 100.0)
 	end 
-	self:generateStandingsGrid()
+	self:GenerateStandingsGrid()
 end 
-
-function EPGP:OnRecurringUnCheck( wndHandler, wndControl, eMouseButton )
-		ChatSystemLib.Command("/p [Mass EP] Raid EP Timer Halted")
-		Apollo.StopTimer("RecurringEPAwardTimer")
-		self.wndEPGPMenu:SetText("EPGP: Idle.")
-		self.wndEPGPMenu:SetTextColor("gray")
-end
-
-function EPGP:OnAwardButton( wndHandler, wndControl, eMouseButton )
-	local amt = tonumber(wndControl:GetParent():FindChild("txtValue"):GetText())
-	local reason = wndControl:GetParent():FindChild("txtReason"):GetText()
-	self:GroupAwardEP( amt, reason )
-end
-
-function EPGP:OnEPGPGridItemClick(wndControl, wndHandler, iRow, iCol, eClick)
-	-- local strCharName = wndHandler:GetCellLuaData(iRow,1)
-end
 
 ---------------------------------------------------------------------------------------------------
 -- EPGPConfigForm Functions
 ---------------------------------------------------------------------------------------------------
 
 function EPGP:OnSaveConfig( wndHandler, wndControl, eMouseButton )
-	self.Config.MinEP = self.wndEPGPConfigForm:FindChild("txtMinEP"):GetText()
-	self.Config.BaseGP = self.wndEPGPConfigForm:FindChild("txtBaseGP"):GetText()
-	self.Config.EPGPDecay = self.wndEPGPConfigForm:FindChild("txtDecay"):GetText()
-	self.Config.RecurringEP = self.wndEPGPConfigForm:FindChild("txtRecurringEP"):GetText()
+	--[[
 	self.Config.tEPGPCosts = {}
 	self.Config.tEPGPCosts["Late"] = { EP = self.wndEPGPConfigForm:FindChild("txtLateEP"):GetText(),  GP = self.wndEPGPConfigForm:FindChild("txtLateGP"):GetText(), strMsg = "/p [%s] Late Arrival%s%s" }
 	self.Config.tEPGPCosts["OnTime"] = { EP = self.wndEPGPConfigForm:FindChild("txtOnTimeEP"):GetText(),  GP = self.wndEPGPConfigForm:FindChild("txtOnTimeGP"):GetText(), strMsg = "/p [%s] On-Time Arrival%s%s" }
 	self.Config.tEPGPCosts["Standby"] = { EP = self.wndEPGPConfigForm:FindChild("txtStandbyEP"):GetText(),  GP = self.wndEPGPConfigForm:FindChild("txtStandbyGP"):GetText(), strMsg = "/p [%s] Standby Points%s%s" }
-
+	--]]
 	--[[
 	self.Config.tEPGPCosts = {
 		["Late"]    = { EP = self.wndEPGPConfigForm:FindChild("txtLateEP"):GetText(),  GP = self.wndEPGPConfigForm:FindChild("txtLateGP"):GetText() or 5, strMsg = "/p [%s] Late Arrival%s%s" },
@@ -828,36 +788,15 @@ function EPGP:OnSaveConfig( wndHandler, wndControl, eMouseButton )
 	--]]
 	self.wndEPGPConfigForm:Show(false)
 	local strToolTip = string.format("<P Font=\""..MenuToolTipFont_Header.."\" TextColor=\"%s\">%s</P>", "white","EPGP")
-	strToolTip = strToolTip .. string.format("<P Font=\""..MenuToolTipFont.."\" TextColor=\"%s\">%s</P>", "yellow", "MinEP="..self.Config.MinEP or "10")
-	strToolTip = strToolTip .. string.format("<P Font=\""..MenuToolTipFont.."\" TextColor=\"%s\">%s</P>", "yellow", "BaseGP="..self.Config.BaseGP or "15")
-	strToolTip = strToolTip .. string.format("<P Font=\""..MenuToolTipFont.."\" TextColor=\"%s\">%s</P>", "yellow", "Decay="..string.format("%.0f %%",self.Config.EPGPDecay or "20"))
-	strToolTip = strToolTip .. string.format("<P Font=\""..MenuToolTipFont.."\" TextColor=\"%s\">%s</P>", "yellow", "RecurringEP="..self.Config.RecurringEP or "15")
+	strToolTip = strToolTip .. string.format("<P Font=\""..MenuToolTipFont.."\" TextColor=\"%s\">%s</P>", "yellow", "MinEP="..self.Config.nMinEP)
+	strToolTip = strToolTip .. string.format("<P Font=\""..MenuToolTipFont.."\" TextColor=\"%s\">%s</P>", "yellow", "BaseGP="..self.Config.nBaseGP)
+	strToolTip = strToolTip .. string.format("<P Font=\""..MenuToolTipFont.."\" TextColor=\"%s\">%s</P>", "yellow", "Decay="..string.format("%.0f %%", self.Config.nDecayPerc))
 	strToolTip = strToolTip .. "\r\n\r\n"
 	strToolTip = strToolTip .. string.format("<P Font=\""..MenuToolTipFont_Help.."\" TextColor=\"%s\">%s</P>", "green", "(Right-Click To Open Standings)")
 	strToolTip = strToolTip .. string.format("<P Font=\""..MenuToolTipFont_Help.."\" TextColor=\"%s\">%s</P>", "green", "(ToeNail-Click To Open Config)")
 
 	self.wndEPGPMenu:SetTooltip(strToolTip)
 end
-
-function EPGP:Top10List()
-	self.top10 = {}
-	for k, val in pairs( self.EPGP_StandingsDB) do 
-		local EP = self.EPGP_StandingsDB[k][kStrStandings].EP
-		local GP = self.EPGP_StandingsDB[k][kStrStandings].GP
-		local PR = EP / GP
-		PR = string.format("%.3f",PR)
-		-- Use the PR as a key in string form, and add the name [k] as a entry so we can count entries later
-		self.top10[PR] = self.top10[PR] or {}
-		table.insert( self.top10[PR], k )
-	end 
-	--[[
-	local sortedlist = {}
-	for k,v in spairs(HighScore, function(t,a,b) return t[b] < t[a] end) do
-		table.insert( sortedlist, { k = v } )
-	end 
-	self.top10 = sortedlist
-	--]]
-end 
 
 local function spairs(t, order)
     -- collect the keys
@@ -882,17 +821,10 @@ local function spairs(t, order)
     end
 end
 
-function EPGP:GetRanking( strName )
-	-- we have the entry, so we just have to find the # in the list that it is.
-	for i=1,10 do 
-		Print("Rank ".. i .. ": " .. #self.top10(i) .. " Entries")
-	end 
-end 
-
 -- Clicking a specific element on the Grid
 function EPGP:OnEPGPGridItemClick(wndControl, wndHandler, iRow, iCol, eClick)
     -- Not a right click, nothing interesting to do
-    if eClick ~= 1 then return end
+    if eClick ~= GameLib.CodeEnumInputMouse.Right then return end
 
     -- If we already have a context menu, destroy it
     if self.wndContext ~= nil and self.wndContext:IsValid() then
@@ -909,7 +841,6 @@ function EPGP:OnEPGPGridItemClick(wndControl, wndHandler, iRow, iCol, eClick)
 
     -- Save the name so we can use it for whatever action we choose (Could save iRow and look up whatever instead)
     self.wndContext:SetData(wndHandler:GetCellText(iRow, 1))
-
 end
 
 -- EPGPContextMenu Functions
@@ -925,7 +856,6 @@ function EPGP:OnContextBtnClick( wndHandler, wndControl, eMouseButton )
 			tonumber(tAwardInfo.GP) ~= 0 and string.format(" +%dGP", tAwardInfo.GP) or "")
 	)
 	self:EPGP_AwardEP(strName,tAwardInfo.EP,tAwardInfo.GP)
-	self:generateStandingsGrid()
 
 	self.wndContext:Destroy()
 end
@@ -940,18 +870,12 @@ function EPGP:OnAwardBtnClick( wndHandler, wndControl, eMouseButton )
 	if self.ItemGPCost == nil then self.wndContext:Destroy() return end -- no item was found, cannot award a loot deduction without it.
 	ChatSystemLib.Command("/p ["..strName.."] Received Loot Item +"..self.ItemGPCost.."GP")
 	self:EPGP_AwardEP(strName,0,self.ItemGPCost)
-	self:generateStandingsGrid()
 	self.ItemGPCost = nil
 	self.wndContext:Destroy()
 end
 
-function EPGP:CalculateLootItemCost()
-	return self.ItemGPCost -- Calculations on GP Cost are always done when you click the bid button
-end
-
-function EPGP:CalculateItemGPValue( tItem )
+function EPGP:CalculateItemGPValue( tItemInfo )
 	--[[ Threeks Formula:
-		( (B+( (Q-1)*2) ) * (100) ) * M
 		B = Base Item Level
 		Q = Quality lvl (Green being 1, blue 2, purple 3, orange 4, pink 5) Right now it's grey = 1
 		T = Elder Tier Level
@@ -964,58 +888,43 @@ function EPGP:CalculateItemGPValue( tItem )
 		local itemQuality = eItem:GetItemQuality()
 		local slotName = eItem:GetSlotName()
 	--]]
-	--local tItem = tItemInfo.itemDrop
-	local B = tItem:GetPowerLevel()
-	local Q = tItem:GetItemQuality()
-	local convSlotNumberToName =
-	{
-		["Chest"] = 1, -- slot 0 conver
-		["Legs"] = 1,
-		["Head"] = 1,
-		["Shoulder"] = 1,
-		["Feet"] = 1,
-		["Hands"] = 1,
-		["Tool"] = 0.5,
-		[""] = 0.75, -- (THIS HAS NO NAME) WeaponAttachmentSlot
-		[""] = 0.75, -- (THIS HAS NO NAME) SupportSystemSlot
-		[""] = 1, -- (THIS HAS NO NAME) Key
-		["Agument"] = 0.75,
-		["Gadget"] = 0.75,
-		[""] = 1,
-		[""] = 1,
-		[""] = 1,
-		["Shields"] = 1.25,
-		["Primary Weapon"] = 1.5, -- Missing From List: Implant Slot
+
+	local tItem = tItemInfo.itemDrop or tItemInfo
+	local nBaseLevel = tItem:GetPowerLevel()
+	-- Factor in GetItemPower()?
+	local nQualityLevel = tItem:GetItemQuality()
+	local tSlotModifiers = {
+		[0]  = 1, -- Chest
+		[1]  = 1, -- Legs
+		[2]  = 1, -- Head
+		[3]  = 0.75, -- Shoulder
+		[4]  = 0.75, -- Feet
+		[5]  = 0.75, -- Hands
+		[6]  = 0.5, -- Tool
+		[7]  = 0.5, -- Weapon Attachment
+		[8]  = 0.5, -- Support System
+		[9]  = 1, -- Not sure, Key I guess?
+		[10] = 0.5, -- Augments & Implants
+		[11] = 1.25, -- Gadget
+		[12] = 0.75, -- Unknown
+		[13] = 0.75, -- Unknown
+		[14] = 0.75, -- Unknown
+		[15] = 1.5, -- Shields
+		[16] = 1.5, -- Primary Weapon
+		[17] = 0.9, -- Container
 	}
-	local sNum = 1
+
+	local nModifier = .1
 	if tItem.GetSlot() ~= nil then 
-		sNum = tItem.GetSlot() + 1
-	end 
-	local M = convSlotNumberToName[ sNum ]
-	if M == nil then 
-		M = 1.5
+		nModifier = tSlotModifiers[tItem.GetSlot()]
 	end
-	local ItemGPCost = ( (B+( (Q-1)*2) ) * (100) ) * M
-	self.ItemGPCost = ItemGPCost
-	return ItemGPCost
 
+	nModifier = nModifier or .1
+
+	local nItemGPCost = ((nBaseLevel + ((nQualityLevel - 1) * 2))  * 100) * nModifier
+	self.ItemGPCost = nItemGPCost
+	return nItemGPCost
 end 
-
-function EPGP:addItemToAuctionBlock(tItemInfo)
-	local strName = tItemInfo.itemDrop:GetName()
-	if not self.Auction then
-		self.Auction = {}
-		self.Auction.strName = { eItemInfo = tItemInfo }
-	end
-	Print("Debug: created auction")
-	--SendVarToRover("auction", self.Auction) 
-	self.Auction["Expires"] = 30
-	Apollo.CreateTimer("TimerCheckAuctionExpired", 30, false)
-	Apollo.StartTimer("TimerCheckAuctionExpired")	
-	ChatSystemLib.Command("/party [ Auction Timer ] {" .. tItemInfo.itemDrop:GetChatLinkString().."} [ ~60 seconds remaining ]")
-
-end
-
 
 function EPGP:OnSortOrderChange(wndHandler, wndControl, eMouseButton)
 	-- Name to Index table
@@ -1058,7 +967,9 @@ function EPGP:ResizeGrid(wndGrid)
     -- Last column gets the same size plus any leftover
     wndGrid:SetColumnWidth(nGCols, nSize + nRemainder)
 end
+
 function EPGP:OnCancelConfig( wndHandler, wndControl, eMouseButton )
+	self.wndEPGPConfigForm:Show(false)
 end
 
 function EPGP:OnResetConfigDefaults( wndHandler, wndControl, eMouseButton )
@@ -1080,12 +991,12 @@ end
 
 function EPGP:OnFilterListCheck( wndHandler, wndControl, eMouseButton )
 	self.FilterList = true
-	self:generateStandingsGrid()
+	self:GenerateStandingsGrid()
 end
 
 function EPGP:OnFilterListUnCheck( wndHandler, wndControl, eMouseButton )
 	self.FilterList = false
-	self:generateStandingsGrid()
+	self:GenerateStandingsGrid()
 end
 
 function EPGP:OnEPGPSizeChanged( wndHandler, wndControl )
@@ -1096,25 +1007,130 @@ function EPGP:OnEPGPSizeChanged( wndHandler, wndControl )
     self:ResizeGrid(self.wndGrid)
 end
 
-function EPGP:OnConfigToggle( wndHandler, wndControl, eMouseButton )
-	local bShowWnd = self.wndMain:FindChild("ConfigButton"):IsChecked()
-	self.wndMain:FindChild("ConfigContainer"):Show(bShowWnd)
+function EPGP:OnAwardReasonBtn( wndHandler, wndControl, eMouseButton )
+	local strNewReason = wndControl:FindChild("AwardBtnText"):GetText()
+	local wndAwardReasonToggle = self.wndMain:FindChild("AwardReasonToggle")
+	wndAwardReasonToggle:SetText(strNewReason)
+	wndAwardReasonToggle:SetCheck(false)
+	self:OnAwardReasonToggle(wndHandler, wndAwardReasonToggle, eMouseButton)
+	if self.wndSubMenu then
+		self.wndSubMenu:Destroy()
+	end
+	self:ToggleOtherReason(strNewReason == "Other")
 end
 
-function EPGP:OnAwardReasonBtn( wndHandler, wndControl, eMouseButton )
-	local strNewReason = wndControl:GetText()
-	self.wndMain:FindChild("AwardReasonToggle"):SetText(strNewReason)
-	self.wndMain:FindChild("AwardListContainer"):Show(false)
-	self.wndMain:FindChild("OtherContainer"):Show(strNewReason == "Other")
-	self.wndMain:FindChild("AwardReasonToggle"):SetCheck(false)
+function EPGP:ToggleOtherReason(bShowOther)
+	local wndOC = self.wndMain:FindChild("OtherContainer")
+	if bShowOther then
+		wndOC:SetTextColor("UI_TextHoloBody")
+	else
+		wndOC:SetTextColor("UI_BtnTextHoloDisabled")
+		wndOC:FindChild("OtherInput"):SetText("")
+	end
+	wndOC:FindChild("OtherInput"):Enable(bShowOther)
 end
 
 function EPGP:OnAwardReasonToggle( wndHandler, wndControl, eMouseButton )
 	local bShowWnd = wndControl:IsChecked()
+	wndControl:FindChild("BtnArrow"):SetCheck(bShowWnd)
 	self.wndMain:FindChild("AwardListContainer"):Show(bShowWnd)
+	if self.wndSubMenu then
+		self.wndSubMenu:Destroy()
+	end
 end
 
 function EPGP:OnAwardEP( wndHandler, wndControl, eMouseButton )
+	local nAward = self.wndMain:FindChild("ValueInput"):GetText()
+	local strReason = self.wndMain:FindChild("AwardReasonToggle"):GetText()
+	local strReason = strReason ~= "Other" and strReason or self.wndMain:FindChild("OtherInput"):GetText()
+	if nAward == "" or strReason == "" then
+		return
+	end
+	if self.wndMain:FindChild("RecurringBtn"):IsChecked() then
+		self.wndMain:FindChild("RecurringBtn"):SetCheck(false)
+		self.wndMain:FindChild("EnableRecurrenceContainer"):Show(false)
+		self.wndMain:FindChild("StopRecurrenceBtn"):Show(true)
+
+		local nDelay = tonumber(self.wndMain:FindChild("DurationInput"):GetText())
+		self.nRecurringAward = nAward
+		self.strRecurringReason = string.format("%s - %dm Repeat", strReason, nDelay)
+		strReason = self.strRecurringReason
+		Apollo.CreateTimer("RecurringEPAwardTimer", nDelay*60, true)
+		Apollo.StartTimer("RecurringEPAwardTimer")
+	end
+	
+	self:GroupAwardEP(nAward, strReason)
+	
+	-- Force close any reason menus that may be open
+	local wndART = self.wndMain:FindChild("AwardReasonToggle")
+	wndART:SetCheck(false)
+	self:OnAwardReasonToggle(wndHandler, wndART, eMouseButton)
+
+	-- Fake a click on the close button to close the window
+	self:OnMassAwardClose(wndHandler, wndContext, eMouseButton)
+end
+
+function EPGP:OnAwardReasonHover( wndHandler, wndControl, x, y )
+	if wndHandler ~= wndControl then
+		return
+	end
+	if self.wndSubMenu and self.wndSubMenu:GetParent() == wndControl  or self.wndSubMenu == wndControl:GetParent():GetParent() then
+		return
+	end
+	if self.wndSubMenu then
+		self.wndSubMenu:Destroy()
+	end
+	if type(wndControl:GetData()) ~= "table" then
+		return
+	end
+	self.wndSubMenu = Apollo.LoadForm(self.xmlDoc, "AwardSubMenu", wndControl, self)
+	local wndContainer = self.wndSubMenu:FindChild("AwardSubMenuBtns")
+	local nCount = 0
+	for nIdx, strLocation in pairs(wndControl:GetData()) do
+		if type(strLocation) == "string" then
+			local wndAwardBtn = Apollo.LoadForm(self.xmlDoc,"AwardReasonButton", wndContainer, self)
+			wndAwardBtn:FindChild("AwardBtnText"):SetText(strLocation)
+			if type(value) == "table" then
+				wndAwardBtn:FindChild("BtnArrow"):Show(true)
+				wndAwardBtn:SetData(value)
+			end
+			nCount = nCount + 1
+		end
+	end
+	wndContainer:ArrangeChildrenVert(0)
+	local nLeft, nTop, nRight, nBottom = wndContainer:GetParent():GetAnchorOffsets()
+	wndContainer:GetParent():SetAnchorOffsets(nLeft, nTop, nRight, nBottom + (nCount * 25) + 40)
+end
+
+function EPGP:OnMassBtnArrowToggle( wndHandler, wndControl, eMouseButton )
+	local wndART = self.wndMain:FindChild("AwardReasonToggle")
+	wndART:SetCheck(wndControl:IsChecked())
+	self:OnAwardReasonToggle(wndHandler, wndART, eMouseButton)
+end
+
+function EPGP:OnMassAwardClose( wndHandler, wndControl, eMouseButton )
+	self.wndMain:FindChild("MassAwardBtn"):SetCheck(false)
+	self:OnMassAwardToggle()
+end
+
+function EPGP:OnStopRecurrenceBtn( wndHandler, wndControl, eMouseButton )
+	-- Hide Stop Timer Button
+	wndControl:Show(false)
+	-- Show Recurrence Options
+	self.wndMain:FindChild("EnableRecurrenceContainer"):Show(true)
+	-- Stop Award Timer
+	Apollo.StopTimer("RecurringEPAwardTimer")
+	-- Clear out award data
+	self.nRecurringAward = 0
+	self.strRecurringReason = nil
+
+	ChatSystemLib.Command("/p [Mass EP] Raid EP Timer Halted")
+	self.wndEPGPMenu:SetText("EPGP: Idle.")
+	self.wndEPGPMenu:SetTextColor("gray")
+end
+
+function EPGP:OnMassAwardToggle( wndHandler, wndControl, eMouseButton )
+	self.wndMain:FindChild("MassAwardContainer"):Show(self.wndMain:FindChild("MassAwardBtn"):IsChecked())
 end
 
 ---------------------------------------------------------------------------------------------------

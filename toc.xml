@@ -1,5 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<Addon Author="Kardall & Sinaloit" APIVersion="8" Name="EPGP" Description="Raid Group Loot Manager" Version="0.7">
+<Addon Author="Kardall &amp; Sinaloit" APIVersion="8" Name="EPGP" Description="Raid Group Loot Manager" Version="0.7">
+    <!-- Libraries -->
+    <Script Name="libs/GeminiLocale-1.0/GeminiLocale.lua"/>
+    <!-- Localization -->
+    <Script Name="locale/enUS.lua"/>
+    <Script Name="locale/deDE.lua"/>
+    <Script Name="locale/frFR.lua"/>
+    <Script Name="locale/koKR.lua"/>
+    <!-- Addons -->
     <Script Name="EPGP.lua"/>
     <Form Name="EPGP.xml"/>
 </Addon>
