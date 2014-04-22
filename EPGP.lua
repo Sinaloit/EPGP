@@ -234,9 +234,9 @@ function EPGP:ImportGuildConfig()
 			bInBlock = not bInBlock
 		elseif bInBlock then
 			for var, tDef in pairs(tConfigDefs) do
-				local var = strLine:match(tDef.pattern)
+				local v = strLine:match(tDef.pattern)
 				if v then
-					v = tDef.parser(var)
+					v = tDef.parser(v)
 					if v == nil or not tDef.validator(v) then
 						-- Log an Error
 					else
