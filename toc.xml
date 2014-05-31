@@ -1,13 +1,37 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<Addon Author="Kardall &amp; Sinaloit" APIVersion="8" Name="EPGP" Description="Raid Group Loot Manager" Version="0.7">
+<Addon Author="Kardall &amp; Sinaloit" APIVersion="8" Name="EPGP" Description="Raid Group Loot Manager" Version="0.8">
     <!-- Libraries -->
-    <Script Name="libs/GeminiLocale-1.0/GeminiLocale.lua"/>
+    <Script Name="libs\LibError-1.0\LibError-1.0.lua"/>
+    <Script Name="libs\CallbackHandler-1.0\CallbackHandler-1.0.lua"/>
+    <Script Name="libs\GeminiAddon-1.1\GeminiAddon.lua"/>
+    <Script Name="libs\GeminiLocale-1.0\GeminiLocale.lua"/>
+    <Script Name="libs\GeminiHook-1.0\GeminiHook-1.0.lua"/>
+    <Script Name="libs\GeminiDB-1.0\GeminiDB-1.0.lua"/>
+    <Script Name="libs\GeminiLogging-1.2\inspect.lua"/>
+    <Script Name="libs\GeminiLogging-1.2\GeminiLogging.lua"/>
+    <Script Name="libs\LibGuildStorage-1.0\LibGuildStorage-1.0.lua"/>
+    <Script Name="libs\LibDialog-1.0\LibDialog-1.0.lua"/>
+
     <!-- Localization -->
-    <Script Name="locale/enUS.lua"/>
-    <Script Name="locale/deDE.lua"/>
-    <Script Name="locale/frFR.lua"/>
-    <Script Name="locale/koKR.lua"/>
-    <!-- Addons -->
+    <Script Name="locale\enUS.lua"/>
+    <Script Name="locale\deDE.lua"/>
+    <Script Name="locale\frFR.lua"/>
+    <Script Name="locale\koKR.lua"/>
+
+    <!-- Addon -->
+    <Script Name="init.lua"/>
     <Script Name="EPGP.lua"/>
+    <Script Name="GuildInfo.lua"/>
+    <Script Name="Dialogs.lua"/>
+
+    <!-- Modules -->
+    <Script Name="modules\announce.lua"/>
+    <Script Name="modules\boss.lua"/>
+    <Script Name="modules\masterloot.lua"/>
+    <Script Name="modules\recurring.lua"/>
+
+    <!-- Config Form -->
+    <Script Name="modules\options.lua"/>
+    <!-- XML Documents -->
     <Form Name="EPGP.xml"/>
 </Addon>

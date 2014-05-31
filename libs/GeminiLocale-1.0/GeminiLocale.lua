@@ -1,13 +1,17 @@
 -------------------------------------------------------------------------------
 -- GeminiLocale
--- Copyright (c) NCsoft. All rights reserved
 -- Author: daihenka
 -- Localization library based on AceLocale.
--- Parts of this code were taken from AceLocale-3.0.lua by Kaelten
+-- Parts of this library was inspired and/or contains snippets from 
+-- AceLocale-3.0.lua by Kaelten
 -------------------------------------------------------------------------------
 
-local MAJOR, MINOR = "GeminiLocale-1.0", 2
-local Lib = {}
+local MAJOR, MINOR = "Gemini:Locale-1.0", 4
+local APkg = Apollo.GetPackage(MAJOR)
+if APkg and (APkg.nVersion or 0) >= MINOR then
+	return -- no upgrade is needed
+end
+local Lib = APkg and APkg.tPackage or {}
 
 local assert, tostring, error, pcall = assert, tostring, error, pcall
 local getmetatable, setmetatable, rawset, rawget, pairs = getmetatable, setmetatable, rawset, rawget, pairs
@@ -20,15 +24,26 @@ local ktLocales = {
 	[4] = "koKR",
 }
 
--- check the locale.languageId console variable set by the launcher
--- if not found, default to enUS
+-- access to read the locale.languageId console variable has been disabled
+-- check what the Apollo.GetString(1) (aka "Cancel") is translated into and 
+-- return the language locale
 local function GetLocale()
-	return ktLocales[(Apollo.GetConsoleVariable("locale.languageId") or 1)]
+	local strCancel = Apollo.GetString(1)
+	
+	-- German
+	if strCancel == "Abbrechen" then 
+		return ktLocales[2]
+	end
+	
+	-- French
+	if strCancel == "Annuler" then
+		return ktLocales[3]
+	end
+	
+	-- Other
+	return ktLocales[1]
+--	return ktLocales[(Apollo.GetConsoleVariable("locale.languageId") or 1)]
 end
-
--- Note: since the locale is stored as a console variable
--- it can be changed on the fly.  Caching this value will
--- require a reloadui (or equivilient) event to update
 
 Lib.apps = Lib.apps or {}
 Lib.appnames = Lib.appnames or {}
@@ -89,11 +104,11 @@ local writedefaultproxy = setmetatable({}, {
 --
 -- @usage
 -- -- enUS.lua
--- local L = Apollo.GetPackage("GeminiLocale-1.0").tPackage:NewLocale("TestLocale", "enUS", true)
+-- local L = Apollo.GetPackage("Gemini:Locale-1.0").tPackage:NewLocale("TestLocale", "enUS", true)
 -- L["string1"] = true
 --
 -- -- deDE.lua
--- local L = Apollo.GetPackage("GeminiLocale-1.0").tPackage:NewLocale("TestLocale", "deDE")
+-- local L = Apollo.GetPackage("Gemini:Locale-1.0").tPackage:NewLocale("TestLocale", "deDE")
 -- if not L then return end
 -- L["string1"] = "Zeichenkette1"
 
