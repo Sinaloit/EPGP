@@ -3,29 +3,21 @@ local mod = EPGP:NewModule("recurring")
 local L = EPGP.L
 local DLG, glog, GS
 
-local nTimeout = 0
-local nLastTime = 0
 local tTimer
 
 function mod:OnTimer()
 	if not EPGP.db.profile then return end
 	local tConfig = EPGP.db.profile
 	local now = os.clock()
-	local nElapsed = nLastTime - now
-	nLastTime = now
 	if now > tConfig.nNextAwardTime and GS:IsCurrentState() then
 		EPGP:IncMassEPBy(tConfig.strNextAwardReason, tConfig.nNextAwardAmount)
 		tConfig.nNextAwardTime =
 			tConfig.nNextAwardTime + tConfig.nRecurringEPPeriodMins * 60
 	end
-	nTimeout = nTimeout + nElapsed
-	if fTimeout > 0.5 then
-		callbacks:Fire("RecurringAwardUpdate",
-						tConfig.strNextAwardReason,
-						tConfig.nNextAwardAmount,
-						tConfig.nNextAwardTime - now)
-		nTimeout = 0
-	end
+	callbacks:Fire("RecurringAwardUpdate",
+					tConfig.strNextAwardReason,
+					tConfig.nNextAwardAmount,
+					tConfig.nNextAwardTime - now)
 end
 
 function mod:StartRecurringEP(strReason, nAmount)

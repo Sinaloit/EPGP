@@ -15,7 +15,7 @@ self.EPGP_GroupDB
 self.EPGPTimer
   This is the Timer data for recurring EP Awards during raids.
 
-self.db.tConfig
+self.db.profile
   Contains all configuration settings for onsave/restore
 --]]
 require "Window"
@@ -96,7 +96,7 @@ end
 local function EncodeNote(nEP, nGP)
   return string.format("%d, %d",
               math.max(nEP, 0),
-              math.max(nGP - EPGP.db.tConfig.nBaseGP, 0))
+              math.max(nGP - EPGP.db.profile.nBaseGP, 0))
 end
 
 local function AddEPGP(strName, nEP, nGP)
@@ -113,7 +113,7 @@ local function AddEPGP(strName, nEP, nGP)
     nGP = -nTotalGP
   end
   GS:SetNote(strName, EncodeNote(nTotalEP + nEP,
-                nTotalGP + nGP + EPGP.db.tConfig.nBaseGP))
+                nTotalGP + nGP + EPGP.db.profile.nBaseGP))
   return nEP, nGP
 end
 
@@ -157,8 +157,8 @@ local comparators = {
          local a_ep, a_gp = EPGP:GetEPGP(a)
          local b_ep, b_gp = EPGP:GetEPGP(b)
 
-         local a_qualifies = a_ep >= EPGP.db.tConfig.nMinEP
-         local b_qualifies = b_ep >= EPGP.db.tConfig.nMinEP
+         local a_qualifies = a_ep >= EPGP.db.profile.nMinEP
+         local b_qualifies = b_ep >= EPGP.db.profile.nMinEP
 
          if a_qualifies == b_qualifies then
            return a_ep/a_gp > b_ep/b_gp
@@ -266,7 +266,7 @@ function EPGP:IsRLorML()
 end
 
 function EPGP:ExportRoster()
-  local nBaseGP = self.db.tConfig.nBaseGP
+  local nBaseGP = self.db.profile.nBaseGP
   local tRoster = {}
   for strName,_ in pairs(tEPData) do
     local nEP, nGP, strMain = self:GetEPGP(strName)
@@ -278,8 +278,8 @@ function EPGP:ExportRoster()
 end
 
 function EPGP:ImportRoster(tRoster, nNewBaseGP)
-  local nOldBaseGP = self.db.tConfig.nBaseGP
-  self.db.tConfig.nBaseGP = nNewBaseGP
+  local nOldBaseGP = self.db.profile.nBaseGP
+  self.db.profile.nBaseGP = nNewBaseGP
 
   local tNotes = {}
   for _, tEntry in pairs(tRoster) do
@@ -293,32 +293,32 @@ function EPGP:ImportRoster(tRoster, nNewBaseGP)
     GS:SetNote(strName, strNote)
   end
 
-  self.db.tConfig.nBaseGP = nOldBaseGP
+  self.db.profile.nBaseGP = nOldBaseGP
 end
 
 function EPGP:StandingsSort(order)
   if not order then
-    return self.db.tConfig.sortOrder
+    return self.db.profile.sortOrder
   end
 
   assert(comparators[order], "Unknown sort order")
 
-  self.db.tConfig.sortOrder = order
+  self.db.profile.sortOrder = order
   DestroyStandings()
 end
 
 function EPGP:StandingsShowEveryone(bVal)
   if bVal == nil then
-    return self.db.tConfig.bShowEveryone
+    return self.db.profile.bShowEveryone
   end
 
-  self.db.tConfig.bShowEveryone = not not val
+  self.db.profile.bShowEveryone = not not val
   DestroyStandings()
 end
 
 function EPGP:GetNumMembers()
   if #tStandings == 0 then
-    RefreshStandings(self.db.tConfig.sortOrder, self.db.tConfig.bShowEveryone)
+    RefreshStandings(self.db.profile.sortOrder, self.db.profile.bShowEveryone)
   end
 
   return #tStandings
@@ -326,7 +326,7 @@ end
 
 function EPGP:GetMember(nIndex)
   if #tStandings == 0 then
-    RefreshStandings(self.db.tConfig.sortOrder, self.db.tConfig.bShowEveryone)
+    RefreshStandings(self.db.profile.sortOrder, self.db.profile.bShowEveryone)
   end
 
   return tStandings[nIndex]
@@ -451,8 +451,8 @@ function EPGP:ResetGP()
 end
 
 function EPGP:CanDecayEPGP()
---  if not CanEditOfficerNote() or self.db.tConfig.nDecayPerc == 0 or not GS:IsCurrentState() then
-  if self.db.tConfig.nDecayPerc == 0 or not GS:IsCurrentState() then
+--  if not CanEditOfficerNote() or self.db.profile.nDecayPerc == 0 or not GS:IsCurrentState() then
+  if self.db.profile.nDecayPerc == 0 or not GS:IsCurrentState() then
     return false
   end
   return true
@@ -461,8 +461,8 @@ end
 function EPGP:DecayEPGP()
   assert(self:CanDecayEPGP())
 
-  local nDecay = self.db.tConfig.nDecayPerc * 0.01
-  local strReason = string.format("Decay %d%%", self.db.tConfig.nDecayPerc)
+  local nDecay = self.db.profile.nDecayPerc * 0.01
+  local strReason = string.format("Decay %d%%", self.db.profile.nDecayPerc)
   for strName,_ in pairs(tEPData) do
     local nEP, nGP, strMain = self:GetEPGP(strName)
     assert(strMain == nil, "Corrupt alt data!")
@@ -476,7 +476,7 @@ function EPGP:DecayEPGP()
       callbacks:Fire("GPAward", strName, strReason, nDecayGP, true)
     end
   end
-  callbacks:Fire("Decay", self.db.tConfig.nDecayPerc)
+  callbacks:Fire("Decay", self.db.profile.nDecayPerc)
 end
 
 function EPGP:GetEPGP(strName)
@@ -485,7 +485,7 @@ function EPGP:GetEPGP(strName)
     strName = strMain
   end
   if tEPData[strName] then
-    return tEPData[strName], tGPData[strName] + self.db.tConfig.nBaseGP, strMain
+    return tEPData[strName], tGPData[strName] + self.db.profile.nBaseGP, strMain
   end
 end
 
@@ -525,7 +525,7 @@ function EPGP:IncEPBy(strName, strReason, nAmount, bMass, bUndo)
   if amount then
     callbacks:Fire("EPAward", strName, strReason, nAmount, bMass, bUndo)
   end
-  self.db.tConfig.tLastAwards[strReason] = nAmount
+  self.db.profile.tLastAwards[strReason] = nAmount
   return strMain or strName
 end
 
@@ -570,19 +570,19 @@ function EPGP:BankItem(strReason, bUndo)
 end
 
 function EPGP:GetDecayPercent()
-  return self.db.tConfig.nDecayPerc
+  return self.db.profile.nDecayPerc
 end
 
 function EPGP:GetExtrasPercent()
-  return self.db.tConfig.nExtrasPerc
+  return self.db.profile.nExtrasPerc
 end
 
 function EPGP:GetBaseGP()
-  return self.db.tConfig.nBaseGP
+  return self.db.profile.nBaseGP
 end
 
 function EPGP:GetMinEP()
-  return self.db.tConfig.nMinEP
+  return self.db.profile.nMinEP
 end
 
 function CanEditInfoMessage()
@@ -620,7 +620,7 @@ end
 function EPGP:IncMassEPBy(strReason, nAmount)
   local tAwarded = {}
   local tExtrasAwarded = {}
-  local nExtrasAmount = math.floor(self.db.tConfig.nExtrasPerc * 0.01 * nAmount)
+  local nExtrasAmount = math.floor(self.db.profile.nExtrasPerc * 0.01 * nAmount)
   local strExtrasReason = strReason .. " - " .. L["Standby"]
 
   for nIndex=1, self:GetNumMembers() do
@@ -722,12 +722,13 @@ function EPGP:OnInitialize()
     profile = {
       last_awards = {},
       show_everyone = false,
-      sort_order = 4,
-      recurring_ep_period_mins = 15,
-      decay_p = 0,
-      extras_p = 100,
-      min_ep = 0,
-      base_gp = 1,
+      sort_order = "PR",
+      bSortAsc = true,
+      nRecurringEPPeriodMins = 15,
+      nDecayPerc = 0,
+      nExtrasPerc = 100,
+      nMinEP = 0,
+      nBaseGP = 1,
       bonus_loot_log = {},
     }
   }
@@ -735,7 +736,7 @@ function EPGP:OnInitialize()
 
   local GeminiLogging = Apollo.GetPackage("Gemini:Logging-1.2").tPackage
   EPGP.glog = GeminiLogging:GetLogger({
-        level = GeminiLogging.WARN,
+        level = GeminiLogging.DEBUG,
         pattern = "%d %n %c %l - %m",
         appender = "GeminiConsole"
   })
@@ -750,7 +751,7 @@ end
 
 function EPGP:OnEnable()
   self.EPGP_StandingsDB = {}
-  self.db.tConfig = {}
+  self.db.profile = {}
   self.FilterList = false
 
   -- Configuration Form
@@ -763,7 +764,6 @@ function EPGP:OnEnable()
   end
 
   -- Register Slash Commands
-  --Apollo.RegisterSlashCommand("epgp", "OnEPGPOn", self)
   Apollo.RegisterSlashCommand("epgpreset", "OnEPGPReset", self)
 
   -- Timer Event for Recurring Awards

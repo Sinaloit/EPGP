@@ -29,6 +29,8 @@
     <Script Name="modules\boss.lua"/>
     <Script Name="modules\masterloot.lua"/>
     <Script Name="modules\recurring.lua"/>
+    <Script Name="modules\ui.lua"/>
+    <Script Name="modules\whisper.lua"/>
 
     <!-- Config Form -->
     <Script Name="modules\options.lua"/>

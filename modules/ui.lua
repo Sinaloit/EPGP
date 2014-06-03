@@ -28,16 +28,18 @@ local ktAwardReasons = {
 	["SotS"] = true,
 }
 
+local tSortCols = {["Character"]=1,["EP"]=2,["GP"]=3,["PR"] = 4,}
+
 function UIMod:OnInitialize()
-	self.db = EPGP.db:RegisterNamespace("ui", mod.dbDefaults)
+	--self.db = EPGP.db:RegisterNamespace("ui") - Need defaults?
 	glog = EPGP.glog
 	DLG = EPGP.DLG
-	callbacks = EPGP.callbacks
-	GS = EPGP.GS
+	GS = Apollo.GetPackage("LibGuildStorage-1.0").tPackage
 end
 
 function UIMod:OnEnable()
 	-- Main EPGP Form
+	glog:debug("Enabling UI")
 	self.wndMain = Apollo.LoadForm(EPGP.xmlDoc, "EPGPForm", nil, self)
 	if self.wndMain == nil then
 		return "Could not load the main window for some reason."
@@ -46,13 +48,12 @@ function UIMod:OnEnable()
 	-- Standings Grid and associated variables
 	self.wndGrid = self.wndMain:FindChild("grdStandings")
 	-- PR is the initially selected sort method
-	self.wndOldSort = self.wndMain:FindChild("PR")
-	self.nSortCol = 4
-	self.bSortAsc = false
+	SendVarToRover("SortOrder", EPGP.db.profile)
+	self.wndOldSort = self.wndMain:FindChild(EPGP.db.profile.sort_order)
 
 	Apollo.RegisterEventHandler("ToggleEPGPWindow", "OnToggleEPGPWindow", self)
-	EPGP.callbacks:RegisterCallback("Decay", "GenerateStandingsGrid")
-	EPGP.callbacks:RegisterCallback("StandingsChanged", "GenerateStandingsGrid")
+	EPGP.RegisterCallback(self, "Decay", "GenerateStandingsGrid")
+	EPGP.RegisterCallback(self, "StandingsChanged", "GenerateStandingsGrid")
 
 	self:SetupAwards()
 end
@@ -72,7 +73,11 @@ function UIMod:EPGP_AwardEP( strCharName, amtEP, amtGP )
 end 
 
 function UIMod:OnToggleEPGPWindow()
-	self.wndMain:Show(not self.wndMain:IsVisible())
+	if self.IsEnabled() then
+		self.wndMain:Show(not self.wndMain:IsVisible())
+	else
+		Print("Sorry you are not in a Guild!")
+	end
 end
 
 function UIMod:SetupAwards()
@@ -102,11 +107,6 @@ function UIMod:AwardItem(tCharacter, tItem)
 	ChatSystemLib.Command("/p ["..tCharacter:GetName().."] Received "..tItem:GetName().." "..nGPCost.."GP")
 	self:EPGP_AwardEP(tCharacter:GetName(), 0, nGPCost)
 end
-
-function UIMod:OnEPGPReset()
-	self.EPGP_StandingsDB = {}
-	self:GroupAwardEP( 0, "Initialization..." )
-end 
 
 function UIMod:exportEPGP( iFormat )
 	-- Spit out Data:
@@ -166,6 +166,7 @@ local function explode(inputstr, sep)
 end
 
 function UIMod:importEPGP( tImportData )
+--[[ Log will handle import/export
 	if tImportData == nil or tImportData == "" then return end
 	-- reset db
 	self.EPGP_StandingsDB = {}
@@ -187,11 +188,7 @@ function UIMod:importEPGP( tImportData )
 	end
 	self:GenerateStandingsGrid()
 	glog:info("[EPGP] DB Imported")
-end
-
--- on SlashCommand "/epgp"
-function UIMod:OnEPGPOn()
-	self.wndMain:Show(true) -- show the window
+	--]]
 end
 
 -- EPGPForm Functions
@@ -221,7 +218,7 @@ function UIMod:OnSingleItemAward( wndHandler, wndControl, eMouseButton )
 end
 
 function UIMod:GenerateStandingsGrid(nSortCol, bShowAll)
-	local grdList = EPGP.wndGrid
+	local grdList = self.wndGrid
 	if not GS:GetGuild() then return end
 
 	for nIndex = 1, EPGP:GetNumMembers() do 
@@ -243,7 +240,7 @@ function UIMod:GenerateStandingsGrid(nSortCol, bShowAll)
 		grdList:SetCellText(iCurrRow, 4, nPR)
 		grdList:SetCellSortText(iCurrRow, 4, PRSort)
 	end
-	grdList:SetSortColumn(EPGP.db.profile.sort_order, self.bSortAsc)
+	grdList:SetSortColumn(tSortCols[EPGP.db.profile.sort_order], EPGP.db.profile.bSortAsc)
 end
 
 ---------------------------------------------------------------------------------------------------
@@ -331,7 +328,7 @@ function UIMod:OnSortOrderChange(wndHandler, wndControl, eMouseButton)
 		self.wndOldSort = wndControl
 	end
 	-- Set sort column to this button with the order as determined
-	self.nSortCol, self.bSortAsc = ktSortIDX[wndControl:GetName()], bAsc
+	EPGP.db.profile.sort_order, EPGP.db.profile.bSortAsc = wndControl:GetName(), bAsc
 	self.wndGrid:SetSortColumn(self.nSortCol, bAsc)
 	-- Set appropriate sort sprite
 	wndControl:FindChild("SortOrderIcon"):SetSprite(bAsc and kStrSortUpSprite or kStrSortDownSprite)

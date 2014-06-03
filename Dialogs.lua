@@ -43,11 +43,6 @@ function EPGP:RegisterDialogs()
 				settings.editboxes[1]:SetText(L["%d or %d"]:format(gp1, gp2))
 			end
 		end,
-		OnHide = function(settings, data)
-			if ChatEdit_GetActiveWindow() then
-				ChatEdit_FocusActiveWindow()
-			end
-		end,
 		OnUpdate = function(settings, elapsed)
 			local gp = tonumber(settings.editboxes[1]:GetText())
 			if EPGP:CanIncGPBy(self.data.item, gp) then
@@ -160,11 +155,6 @@ function EPGP:RegisterDialogs()
 			settings:SetText(L["%s is dead. Award EP?"]:format(data))
 			settings.editboxes[1]:SetText("")
 		end,
-		OnHide = function(settings, data)
-			if ChatEdit_GetActiveWindow() then
-				ChatEdit_FocusActiveWindow()
-			end
-		end,
 		OnUpdate = function(settings, elapsed)
 			local ep = tonumber(self.editboxes[1]:GetText())
 			if EPGP:CanIncEPBy(self.data, ep) then
@@ -205,11 +195,6 @@ function EPGP:RegisterDialogs()
 			settings:SetText(L["Wiped on %s. Award EP?"]:format(data))
 			settings.editboxes[1]:SetText("")
 		end,
-		OnHide = function(settings, data)
-			if ChatEdit_GetActiveWindow() then
-				ChatEdit_FocusActiveWindow()
-			end
-		end,
 		OnUpdate = function(settings, elapsed)
 			local ep = tonumber(settings.editboxes[1]:GetText())
 			if EPGP:CanIncEPBy(self.data, ep) then
@@ -245,7 +230,6 @@ function EPGP:RegisterDialogs()
 		showWhileDead = true,
 	})
 
-
 	DLG:Register("EPGP_RECURRING_RESUME", {
 		buttons = {
 			{
@@ -269,16 +253,13 @@ function EPGP:RegisterDialogs()
 		OnShow = function(settings, data)
 			settings:SetText(data.text)
 			settings:SetTimeRemaining(data.timeout)
-			settings:ShowCloseButton(false)
 		end,
 		OnCancel = function(settings, data, reason)
 			if reason ~= "override" then
 				EPGP:StopRecurringEP()
 			end
 		end,
-		OnHide = function(self, settings, data)
-			settings:ShowCloseButton(false)
-		end,
+		noCloseButton = true,
 		hideOnEscape = true,
 		showWhileDead = true,
 	})
