@@ -26,7 +26,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ]]
 
-local MAJOR,MINOR = "Gemini:LibDialog-1.0", 5
+local MAJOR,MINOR = "Gemini:LibDialog-1.0", 6
 -- Get a reference to the package information if any
 local APkg = Apollo.GetPackage(MAJOR)
 -- If there was an older version loaded we need to see if this is newer
@@ -512,8 +512,8 @@ local function _Dialog_OnNextFrame(self)
 			if tDelegate.OnCancel then
 				safecall(tDelegate.OnCancel, tStoredData, tStoredData.tData, "timeout")
 			end
-			_DialogOnHide(wndDialog)
 			wndDialog:Show(false)
+			_DialogOnHide(wndDialog)
 			return
 		end
 		tStoredData.nTimeRemaining = nRemaining
@@ -648,8 +648,8 @@ function Lib:OnButtonSignal(wndHandler, wndButton, eMouseButton)
 	end
 
 	if not bStayOpen then
-		_DialogOnHide(wndDialog)
 		wndDialog:Show(false)
+		_DialogOnHide(wndDialog)
 	end
 end
 
@@ -912,8 +912,8 @@ function Lib:Spawn(reference, tData)
 				if tStoredData.tDelegate.OnCancel then
 					safecall(tStoredData.tDelegate.OnCancel, tStoredData, tStoredData.tData, "override")
 				end
-				_DialogOnHide(wndDialog)
 				wndDialog:Show(false)
+				_DialogOnHide(wndDialog)
 			end
 		end
 	end
@@ -933,8 +933,8 @@ function Lib:Spawn(reference, tData)
 						if tStoredData.tDelegate.OnCancel then
 							safecall(tStoredData.tDelegate.OnCancel, tStoredData, tStoredData.tData, "override")
 						end
-						_DialogOnHide(wndDialog)
 						wndDialog:Show(false)
+						_DialogOnHide(wndDialog)
 					end
 				end
 			else
@@ -951,8 +951,8 @@ function Lib:Spawn(reference, tData)
 		if not tDelegate.noCancelOnReuse and tDelegate.OnCancel then
 			safecall(tDelegate.OnCancel, tStoredData, tStoredData.tData, "override")
 		end
-		_DialogOnHide(wndDialog)
 		wndDialog:Show(false)
+		_DialogOnHide(wndDialog)
 	end
 
 	-- Build new Dialog
@@ -1020,8 +1020,8 @@ function Lib:Dismiss(reference, tData)
 		local tStoredData = tActiveDialogs[nIndex]:GetData()
 
 		if tStoredData.tDelegate == tDelegate and (not tData or tStoredData.tData == tData) then
-			_DialogOnHide(tActiveDialogs[nIndex])
 			tActiveDialogs[nIndex]:Show(false)
+			_DialogOnHide(tActiveDialogs[nIndex])
 		end
 	end
 end

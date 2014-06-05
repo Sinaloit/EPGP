@@ -1,5 +1,7 @@
 local EPGP = Apollo.GetAddon("EPGP")
+local L = EPGP.L
 local mod = EPGP:NewModule("whisper")
+local glog
 
 local tSenderMap = {}
 
@@ -48,8 +50,9 @@ local function SendNotifiesAndClearExtras(
 		strEventName, tNames, strReason, nAmount,
 		tExtrasAwarded, strExtrasReason, nExtrasAmount)
 	local medium = AnnounceMedium()
+
 	if medium then
-		EPGP:GetModule("Annouce"):AnnounceTo(
+		EPGP:GetModule("announce"):AnnounceTo(
 			medium,
 			L["If you want to be on the award list but you are not in the raid, you need to whisper me: 'epgp standby' or 'epgp standby <name>' where <name> is the toon that should receive awards"])
 	end
@@ -77,6 +80,7 @@ mod.dbDefaults = {
 }
 
 function mod:OnInitialize()
+	glog = EPGP.glog
 	self.db = EPGP.db:RegisterNamespace("whisper", mod.dbDefaults)
 end
 

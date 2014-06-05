@@ -1,8 +1,9 @@
 local EPGP = Apollo.GetAddon("EPGP")
 local mod = EPGP:NewModule("recurring")
 local L = EPGP.L
-local DLG, glog, GS
+local DLG, glog, GS, callbacks
 
+local ceil = math.ceil
 local tTimer
 
 function mod:OnTimer()
@@ -39,6 +40,7 @@ function mod:StartRecurringEP(strReason, nAmount)
 	else
 		tTimer = ApolloTimer.Create(1.0, true, "OnTimer", self)
 	end
+
 	return true
 end
 
@@ -50,7 +52,7 @@ function mod:ResumeRecurringEP()
 	local text = L["Do you want to resume recurring award (%s) %d EP/%s?"]:format(
 					tConfig.strNextAwardReason,
 					tConfig.nNextAwardAmount,
-					EPGP:RecurringEPPeriodString())
+					mod:RecurringEPPeriodString())
 	DLG:Spawn("EPGP_RECURRING_RESUME", {text = text, timeout = nTimeout})
 end
 
@@ -99,13 +101,19 @@ function mod:RecurringEPPeriodMinutes(nValue)
 	tConfig.nRecurringEPPeriodMins = nValue
 end
 
-function SecondsToTimeAbbrev(nTime)
-    if nTime <= 0 then
-        return ""
-    elseif nTime < 3600  then
-        return "%d:%02d", floor(nTime/60), nTime%60
+local function SecondsToTimeAbbrev(nTime)
+	local tempTime
+	if nTime >= 86400 then
+		tempTime = ceil(nTime / 86400)
+		return "%dd", tempTime
+    elseif nTime >= 3600 then
+    	tempTime = ceil(nTime / 3600)
+    	return "%dh", tempTime
+    elseif nTime >= 60 then
+    	tempTime = ceil(nTime / 60)
+    	return "%dm", tempTime
     else
-        return "%dh%2dm", floor(nTime/3600), nTime%3600/60
+    	return "%ds", nTime
     end
 end
 
@@ -136,13 +144,12 @@ end
 
 function mod:OnInitialize()
 	GS = Apollo.GetPackage("LibGuildStorage-1.0").tPackage
-	DLG = EPGP.DLG
-	glog = EPGP.glog
+	DLG, glog, callbacks = EPGP.DLG, EPGP.glog, EPGP.callbacks
 	DLG:Register("EPGP_RECURRING_RESUME", {
 		buttons = {
 			{
 				text = Apollo.GetString("CRB_Yes"),
-				OnClick = function(self, data, reason)
+				OnClick = function(settings, data, reason)
 					callbacks:Fire("ResumeRecurringAward",
 								EPGP.db.profile.strNextAwardReason,
 								EPGP.db.profile.nNextAwardAmount,
@@ -156,24 +163,21 @@ function mod:OnInitialize()
 			},
 			{
 				text = Apollo.GetString("CRB_No"),
-				OnClick = function(self, data, reason)
+				OnClick = function(settings, data, reason)
 					mod:StopRecurringEP()
 				end,
 			},
 		},
-		OnShow = function(self, settings, data)
+		OnShow = function(settings, data)
 			settings:SetText(data.text)
 			settings:SetTimeRemaining(data.timeout)
-			settings:ShowCloseButton(false)
 		end,
-		OnCancel = function(self, data, reason)
+		OnCancel = function(settings, data, reason)
 			if reason ~= "override" then
 				mod:StopRecurringEP()
 			end
 		end,
-		OnHide = function(self, settings, data)
-			settings:ShowCloseButton(true)
-		end,
+		noCloseButton = true,
 		hideOnEscape = true,
 		showWhileDead = true,
 	})

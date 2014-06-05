@@ -1,6 +1,7 @@
 local EPGP = Apollo.GetAddon("EPGP")
 local mod = EPGP:NewModule("announce")
 --local AC = LibStub("AceComm-3.0")
+local ceil = math.ceil
 
 -- Assigned in OnEnable
 local glog = nil
@@ -31,6 +32,22 @@ local function strsplit(delim, str, maxNb)
     end
 
     return result
+end
+
+local function SecondsToTimeAbbrev(nTime)
+  local tempTime
+  if nTime >= 86400 then
+    tempTime = ceil(nTime / 86400)
+    return "%dd", tempTime
+    elseif nTime >= 3600 then
+      tempTime = ceil(nTime / 3600)
+      return "%dh", tempTime
+    elseif nTime >= 60 then
+      tempTime = ceil(nTime / 60)
+      return "%dm", tempTime
+    else
+      return "%ds", nTime
+    end
 end
 
 function mod:AnnounceTo(medium, fmt, ...)
@@ -65,8 +82,7 @@ function mod:AnnounceTo(medium, fmt, ...)
 end
 
 function mod:Announce(fmt, ...)
---  local medium = self.db.profile.medium
-  local medium = "RAID"
+  local medium = self.db.profile.medium
   return mod:AnnounceTo(medium, fmt, ...)
 end
 
@@ -253,10 +269,10 @@ end
 function mod:OnEnable()
   glog = EPGP.glog
   for e, _ in pairs(mod.optionsArgs.events.values) do
---    if self.db.profile.events[e] then
+    if self.db.profile.events[e] then
       glog:debug("Enabling announce of: %s (startup)", e)
       EPGP.RegisterCallback(self, e)
---    end
+    end
   end
 end
 

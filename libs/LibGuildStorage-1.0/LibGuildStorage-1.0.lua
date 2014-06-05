@@ -55,7 +55,7 @@ local Lib = APkg and APkg.tPackage or {}
 ----------------------------------------------------------------------------------
 --- Local Variables
 local glog = nil
-local bFirstFrame = true
+local tTimer = nil
 local callbacks = nil
 	
 local CallbackHandler = Apollo.GetPackage("Gemini:CallbackHandler-1.0").tPackage
@@ -173,16 +173,8 @@ local function SendState(strState, strChannel)
 	Lib.channel:SendMessage(tMsg)
 end
 
-local i = 1
-function Lib:OnGuildLoaded(guildLoaded)
-	glog:debug("GuildLoaded")
-	i = i + 1
-	self:OnGuildChange()
-
-end
-
 function Lib:OnGuildChange()
-	glog:debug("GuildChange")
+	tTimer = nil
 	for key, tGuildItem in pairs(GuildLib.GetGuilds()) do
 		if tGuildItem:GetType() == GuildLib.GuildType_Guild then
 			if tGuildItem ~= self.tGuild then
@@ -193,8 +185,8 @@ function Lib:OnGuildChange()
 				SetState("STALE_WAITING_FOR_ROSTER_UPDATE")
 				Apollo.RegisterEventHandler("VarChange_FrameCount", "OnUpdate", self)
 				callbacks:Fire("GuildChanged", tGuildItem)
-				return
 			end
+			return
 		end
 	end
 	-- No Guild Found, stop processing events
@@ -276,11 +268,6 @@ end
 function Lib:OnUpdate()
 	local startTime = os.clock()
 	-- FirstFrame means setup time!
-	if bFirstFrame then
-		self:OnGuildChange()
-		bFirstFrame = nil
-		return
-	end
 
 	-- If we are up to date or waiting on a roster then we are done ... for now.
 	if state == "CURRENT" or state == "ROSTER_REQUEST_PENDING" then
@@ -420,13 +407,13 @@ function Lib:OnLoad()
 
 	Apollo.RegisterEventHandler("GuildRoster","OnGuildRoster",self)
 	Apollo.RegisterEventHandler("GuildInfoMessage", "OnGuildInfoMessage", self)
-	Apollo.RegisterEventHandler("GuildLoaded", "OnGuildLoaded", self)
 	Apollo.RegisterEventHandler("GuildChange", "OnGuildChange", self)
 	Apollo.RegisterEventHandler("GuildMemberChange", "OnGuildMemberChange", self)
 --	TODO: ICCommLib setup, see notes above.  Disabled until ICCommLib works for packages and is private...
 --	self.channel = ICCommLib.JoinChannel("LibGuildStorage","OnStorageComm",Lib)
 
-	Apollo.RegisterEventHandler("VarChange_FrameCount","OnUpdate",self)
+	-- GuildChange fires on initial load but not on reloadui while in game ... yay? so we setup a timer to do it anyway
+	tTimer = ApolloTimer.Create(0.01, false, "OnGuildChange", self)
 end
 
 -- No required dependencies

@@ -1,6 +1,6 @@
 local EPGP = Apollo.GetAddon("EPGP")
 local UIMod = EPGP:NewModule("ui")
-L = EPGP.L
+local L = EPGP.L
 local glog, callbacks, DLG, GS
 
 local MenuToolTipFont_Header = "CRB_Pixel_O"
@@ -35,11 +35,23 @@ function UIMod:OnInitialize()
 	glog = EPGP.glog
 	DLG = EPGP.DLG
 	GS = Apollo.GetPackage("LibGuildStorage-1.0").tPackage
+	-- Register either way, we give an error if not enabled
+	Apollo.RegisterEventHandler("ToggleEPGPWindow", "OnToggleEPGPWindow", self)
+end
+
+local function ShowStopRecurrence()
+	UIMod.wndMain:FindChild("RecurringBtn"):SetCheck(false)
+	UIMod.wndMain:FindChild("EnableRecurrenceContainer"):Show(false)
+	UIMod.wndMain:FindChild("StopRecurrenceBtn"):Show(true)
+end
+
+local function HideStopRecurrence()
+	UIMod.wndMain:FindChild("EnableRecurrenceContainer"):Show(true)
+	UIMod.wndMain:FindChild("StopRecurrenceBtn"):Show(false)
 end
 
 function UIMod:OnEnable()
 	-- Main EPGP Form
-	glog:debug("Enabling UI")
 	self.wndMain = Apollo.LoadForm(EPGP.xmlDoc, "EPGPForm", nil, self)
 	if self.wndMain == nil then
 		return "Could not load the main window for some reason."
@@ -47,19 +59,18 @@ function UIMod:OnEnable()
 
 	-- Standings Grid and associated variables
 	self.wndGrid = self.wndMain:FindChild("grdStandings")
+	self.wndMain:FindChild("DurationInput"):SetText(EPGP.db.profile.nRecurringEPPeriodMins)
 	-- PR is the initially selected sort method
-	SendVarToRover("SortOrder", EPGP.db.profile)
-	self.wndOldSort = self.wndMain:FindChild(EPGP.db.profile.sort_order)
+	self.wndOldSort = self.wndMain:FindChild(EPGP.db.profile.strSortOrder)
 
-	Apollo.RegisterEventHandler("ToggleEPGPWindow", "OnToggleEPGPWindow", self)
 	EPGP.RegisterCallback(self, "Decay", "GenerateStandingsGrid")
 	EPGP.RegisterCallback(self, "StandingsChanged", "GenerateStandingsGrid")
-
+	EPGP.RegisterCallback(self, "ResumeRecurringAward", ShowStopRecurrence)
+	EPGP.RegisterCallback(self, "StopRecurringAward", HideStopRecurrence)
 	self:SetupAwards()
 end
 
 function UIMod:OnDisable()
-	Apollo.RevoveEventHandler("ToggleEPGPWindow", self)
 	EPGP.UnregisterAllCallbacks(self)
 	self.wndMain:Destroy()
 end
@@ -73,7 +84,7 @@ function UIMod:EPGP_AwardEP( strCharName, amtEP, amtGP )
 end 
 
 function UIMod:OnToggleEPGPWindow()
-	if self.IsEnabled() then
+	if self:IsEnabled() then
 		self.wndMain:Show(not self.wndMain:IsVisible())
 	else
 		Print("Sorry you are not in a Guild!")
@@ -85,7 +96,7 @@ function UIMod:SetupAwards()
 	local nCount = 1
 	for strLocation, value in pairs(ktAwardReasons) do
 		if type(strLocation) == "string" then
-			local wndAwardBtn = Apollo.LoadForm(self.xmlDoc,"SubMenuButton", wndContainer, self)
+			local wndAwardBtn = Apollo.LoadForm(EPGP.xmlDoc,"SubMenuButton", wndContainer, self)
 			wndAwardBtn:FindChild("BtnText"):SetText(strLocation)
 			if type(value) == "table" then
 				wndAwardBtn:FindChild("BtnArrow"):Show(true)
@@ -94,7 +105,7 @@ function UIMod:SetupAwards()
 			nCount = nCount + 1
 		end
 	end
-	local wndAwardBtn = Apollo.LoadForm(self.xmlDoc,"SubMenuButton", wndContainer, self)
+	local wndAwardBtn = Apollo.LoadForm(EPGP.xmlDoc,"SubMenuButton", wndContainer, self)
 	wndAwardBtn:FindChild("BtnText"):SetText("Other")
 	wndContainer:ArrangeChildrenVert(0)
 	local nLeft, nTop, nRight, nBottom = wndContainer:GetParent():GetAnchorOffsets()
@@ -221,12 +232,16 @@ function UIMod:GenerateStandingsGrid(nSortCol, bShowAll)
 	local grdList = self.wndGrid
 	if not GS:GetGuild() then return end
 
+	-- Clear out old list
+	grdList:DeleteAll()
+
+	-- Build new list
 	for nIndex = 1, EPGP:GetNumMembers() do 
 		local iCurrRow = grdList:AddRow("")
 		local strName = EPGP:GetMember(nIndex)
 		local nEP, nGP = EPGP:GetEPGP(strName)
 		local nPR = string.format("%.2f", nEP / nGP)
-		local PRSort = nEP >= EPGP.db.profile.min_ep and string.format("_%.3f", nEP/nGP) or string.format("%.3f", nGP/nEP)
+		local PRSort = nEP >= EPGP.db.profile.nMinEP and string.format("_%.3f", nEP/nGP) or string.format("%.3f", nGP/nEP)
 
 		grdList:SetCellText(iCurrRow, 1, strName)
 		grdList:SetCellSortText(iCurrRow, 1, string.lower(strName))
@@ -240,7 +255,7 @@ function UIMod:GenerateStandingsGrid(nSortCol, bShowAll)
 		grdList:SetCellText(iCurrRow, 4, nPR)
 		grdList:SetCellSortText(iCurrRow, 4, PRSort)
 	end
-	grdList:SetSortColumn(tSortCols[EPGP.db.profile.sort_order], EPGP.db.profile.bSortAsc)
+	grdList:SetSortColumn(tSortCols[EPGP.db.profile.strSortOrder], EPGP.db.profile.bSortAsc)
 end
 
 ---------------------------------------------------------------------------------------------------
@@ -311,8 +326,6 @@ function UIMod:OnAwardBtnClick( wndHandler, wndControl, eMouseButton )
 end
 
 function UIMod:OnSortOrderChange(wndHandler, wndControl, eMouseButton)
-	-- Name to Index table
-	local ktSortIDX = {  ["Character"] = 1, ["EP"] = 2, ["GP"] = 3, ["PR"] = 4 }
 	-- Default sort is Ascending
 	local bAsc = true
 
@@ -328,8 +341,8 @@ function UIMod:OnSortOrderChange(wndHandler, wndControl, eMouseButton)
 		self.wndOldSort = wndControl
 	end
 	-- Set sort column to this button with the order as determined
-	EPGP.db.profile.sort_order, EPGP.db.profile.bSortAsc = wndControl:GetName(), bAsc
-	self.wndGrid:SetSortColumn(self.nSortCol, bAsc)
+	EPGP.db.profile.strSortOrder, EPGP.db.profile.bSortAsc = wndControl:GetName(), bAsc
+	self.wndGrid:SetSortColumn(tSortCols[wndControl:GetName()], bAsc)
 	-- Set appropriate sort sprite
 	wndControl:FindChild("SortOrderIcon"):SetSprite(bAsc and kStrSortUpSprite or kStrSortDownSprite)
 end
@@ -424,17 +437,15 @@ function UIMod:OnAwardEP( wndHandler, wndControl, eMouseButton )
 		return
 	end
 	if self.wndMain:FindChild("RecurringBtn"):IsChecked() then
-		self.wndMain:FindChild("RecurringBtn"):SetCheck(false)
-		self.wndMain:FindChild("EnableRecurrenceContainer"):Show(false)
-		self.wndMain:FindChild("StopRecurrenceBtn"):Show(true)
+		ShowStopRecurrence()
 
 		local nDelay = tonumber(self.wndMain:FindChild("DurationInput"):GetText())
-		self.db.profile.nRecurringEPPeriodMins = nDelay
-		EPGP:StartRecurringEP()
+
+		EPGP.db.profile.nRecurringEPPeriodMins = nDelay
+		EPGP:GetModule("recurring"):StartRecurringEP(strReason, nAward)
 	else
-		EPGP:IncMassEPBy(nAward, strReason)
+		EPGP:IncMassEPBy(strReason, nAward)
 	end
-	
 	-- Force close any reason menus that may be open
 	local wndART = self.wndMain:FindChild("AwardReasonToggle")
 	wndART:SetCheck(false)
@@ -493,9 +504,29 @@ function UIMod:OnStopRecurrenceBtn( wndHandler, wndControl, eMouseButton )
 	-- Show Recurrence Options
 	self.wndMain:FindChild("EnableRecurrenceContainer"):Show(true)
 	-- Stop Award Timer
-	EPGP:StopRecurringEP()
+	EPGP:GetModule("recurring"):StopRecurringEP()
 end
 
 function UIMod:OnMassAwardToggle( wndHandler, wndControl, eMouseButton )
 	self.wndMain:FindChild("MassAwardContainer"):Show(self.wndMain:FindChild("MassAwardBtn"):IsChecked())
 end
+
+
+
+---------------------------------------------------------------------------------------------------
+-- PortForm Functions
+---------------------------------------------------------------------------------------------------
+--[[
+function EPGP:OnExportDBClick( wndHandler, wndControl, eMouseButton )
+  self.wndImportExport:FindChild("txtData"):SetText( self:exportEPGP( 1 ) )
+end
+
+function EPGP:OnImportDBClick( wndHandler, wndControl, eMouseButton )
+  self:importEPGP( self.wndImportExport:FindChild("txtData"):GetText() )
+  self.wndImportExport:Destroy()
+end
+
+function EPGP:OnPortCloseBtn( wndHandler, wndControl, eMouseButton )
+  self.wndImportExport:Destroy()
+end
+]]
