@@ -11,27 +11,23 @@
     <Script Name="libs\GeminiLogging-1.2\GeminiLogging.lua"/>
     <Script Name="libs\LibGuildStorage-1.0\LibGuildStorage-1.0.lua"/>
     <Script Name="libs\LibDialog-1.0\LibDialog-1.0.lua"/>
-
     <!-- Localization -->
     <Script Name="locale\enUS.lua"/>
     <Script Name="locale\deDE.lua"/>
     <Script Name="locale\frFR.lua"/>
     <Script Name="locale\koKR.lua"/>
-
     <!-- Addon -->
     <Script Name="init.lua"/>
     <Script Name="EPGP.lua"/>
     <Script Name="GuildInfo.lua"/>
     <Script Name="Dialogs.lua"/>
-
     <!-- Modules -->
     <Script Name="modules\announce.lua"/>
+    <Script Name="modules\recurring.lua"/>
     <Script Name="modules\boss.lua"/>
     <Script Name="modules\masterloot.lua"/>
-    <Script Name="modules\recurring.lua"/>
     <Script Name="modules\ui.lua"/>
     <Script Name="modules\whisper.lua"/>
-
     <!-- Config Form -->
     <Script Name="modules\options.lua"/>
     <!-- XML Documents -->

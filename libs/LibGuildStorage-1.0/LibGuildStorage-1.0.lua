@@ -185,6 +185,8 @@ function Lib:OnGuildChange()
 				SetState("STALE_WAITING_FOR_ROSTER_UPDATE")
 				Apollo.RegisterEventHandler("VarChange_FrameCount", "OnUpdate", self)
 				callbacks:Fire("GuildChanged", tGuildItem)
+				-- Fake a Guild InfoMessageChange event to send current GuildInfo
+				self:OnGuildInfoMessage(self.tGuild)
 			end
 			return
 		end
@@ -238,11 +240,9 @@ local valid_transitions = {
 	CURRENT = {
 		FLUSHING = true,
 		REMOTE_FLUSHING = true,
---		STALE = true,
 	},
 	FLUSHING = {
 		STALE_WAITING_FOR_ROSTER_UPDATE = true,
---		CURRENT = true,	-- Added as there is no good note change event (since there are no notes ...)
 	},
 	REMOTE_FLUSHING = {
 		STALE_WAITING_FOR_ROSTER_UPDATE = true,
@@ -267,7 +267,6 @@ end
 
 function Lib:OnUpdate()
 	local startTime = os.clock()
-	-- FirstFrame means setup time!
 
 	-- If we are up to date or waiting on a roster then we are done ... for now.
 	if state == "CURRENT" or state == "ROSTER_REQUEST_PENDING" then
@@ -371,6 +370,7 @@ function Lib:OnUpdate()
 end
 
 function Lib:OnGuildInfoMessage(guildOwner)
+	glog:debug("GuildInfoMessage")
 	if self.tGuild == guildOwner then
 		local strNewGuildInfo = self.tGuild:GetInfoMessage() or ""
 		if strNewGuildInfo ~= strGuildInfo then

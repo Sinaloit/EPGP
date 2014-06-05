@@ -63,7 +63,7 @@ local tConfigDefs = {
 	},
 }
 
-local function ParseGuildInfo(strGuildInfo)
+local function ParseGuildInfo(callback, strGuildInfo)
 	if not strGuildInfo then
 		return
 	end
@@ -73,7 +73,7 @@ local function ParseGuildInfo(strGuildInfo)
 	local tNewConfig = {}
 
 	for _,strLine in pairs(tLines) do
-		if strLine == "-EPGP-" then
+		if strLine:sub(1,6) == "-EPGP-" then
 			bInBlock = not bInBlock
 		elseif bInBlock then
 			for var, tDef in pairs(tConfigDefs) do
@@ -91,10 +91,10 @@ local function ParseGuildInfo(strGuildInfo)
 	end
 
 	for var, tDef in pairs(tConfigDefs) do
-		local nOldValue = epgp.db.tConfig[var]
-		EPGP.db.tConfig[var] = tNewConfig[var] or tDef.default
-		if nOldValue ~= EPGP.db.tConfig[var] then
-			EPGP.callbacks:Fire(tDef.change_message, EPGP.db.tConfig[var])
+		local nOldValue = EPGP.db.profile[var]
+		EPGP.db.profile[var] = tNewConfig[var] or tDef.default
+		if nOldValue ~= EPGP.db.profile[var] then
+			EPGP.callbacks:Fire(tDef.change_message, EPGP.db.profile[var])
 		end
 	end
 end

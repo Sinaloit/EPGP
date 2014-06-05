@@ -66,11 +66,11 @@ local GS = Apollo.GetPackage("LibGuildStorage-1.0").tPackage
 local function wipe(tbl)
   if not tbl then return end
   for k,v in pairs(tbl) do
-    tbl[k] = n
+    tbl[k] = nil
   end
 end
 
-function IsInGroup(strPlayer)
+local function IsInGroup(strPlayer)
   for idx = 1, GroupLib.GetMemberCount() do
     local tMemberInfo = GroupLib.GetGroupMember(idx)
     if tMemberInfo ~= nil and tMemberInfo.strCharacterName:lower() == strPlayer:lower() then 
@@ -94,7 +94,7 @@ function EPGP:DecodeNote(strNote)
 end
 
 local function EncodeNote(nEP, nGP)
-  return string.format("%d, %d",
+  return string.format("%d,%d",
               math.max(nEP, 0),
               math.max(nGP - EPGP.db.profile.nBaseGP, 0))
 end
@@ -259,7 +259,7 @@ local function ParseGuildNote(callback, strName, strNote)
 end
 
 function EPGP:IsRLorML()
-  if GameLib.InRaid() then
+  if GroupLib.InRaid() then
     return GroupLib.AmILeader()
   end
   return false
@@ -346,7 +346,7 @@ function EPGP:GetAlt(strName, nIndex)
 end
 
 function EPGP:SelectMember(strName)
-  if GameLib.InRaid() then
+  if GroupLib.InRaid() then
     -- In same raid?
     if IsInGroup(strName) then
       return false
@@ -360,7 +360,7 @@ end
 
 function EPGP:DeSelectMember(strName)
   if IsInGroup(strName) then
-    if GameLib.InRaid() then
+    if GroupLib.InRaid() then
       return false
     end
   end
@@ -375,7 +375,7 @@ function EPGP:DeSelectMember(strName)
 end
 
 function EPGP:GetNumMembersInAwardList()
-  if GameLib.InRaid() then
+  if GroupLib.InRaid() then
     return GroupLib.GetMemberCount() + tSelected._count
   else
     if tSelected._count == 0 then
@@ -387,7 +387,7 @@ function EPGP:GetNumMembersInAwardList()
 end
 
 function EPGP:IsMemberInAwardList(strName)
-  if GameLib.InRaid() then
+  if GroupLib.InRaid() then
     -- If we are raiding, people who are raiding or selected are eligible
     return IsInGroup[strName] or tSelected[strName]
   else
@@ -400,7 +400,7 @@ function EPGP:IsMemberInAwardList(strName)
 end
 
 function EPGP:IsMemberInExtrasList(strName)
-  return GameLib.InRaid() and tSelected[strName]
+  return GroupLib.InRaid() and tSelected[strName]
 end
 
 function EPGP:IsAnyMemberInExtrasList()
@@ -521,6 +521,7 @@ function EPGP:IncEPBy(strName, strReason, nAmount, bMass, bUndo)
     Print(L["Ignoring EP change for unknown member %s"]:format(strName))
     return
   end
+
   nAmount = AddEPGP(strMain or strName, nAmount, 0)
   if amount then
     callbacks:Fire("EPAward", strName, strReason, nAmount, bMass, bUndo)
@@ -625,6 +626,7 @@ function EPGP:IncMassEPBy(strReason, nAmount)
 
   for nIndex=1, self:GetNumMembers() do
     local strName = self:GetMember(nIndex)
+
     if self:IsMemberInAwardList(strName) then
       -- EPGP:GetMain() will return the input name if it doesn't find a main,
       -- so we can't use it to validate that this actually is a character who
@@ -634,6 +636,7 @@ function EPGP:IncMassEPBy(strReason, nAmount)
       -- valid member based on the name however.
       local nEP, nGP, strMain = self:GetEPGP(strName)
       local strMain = strMain or strName
+
       if nEP and not tAwarded[strMain] and not tExtrasAwarded[strMain] then
         if self:IsMemberInExtrasList(strName) then
           self:IncEPBy(strName, strExtrasReason, nExtrasAmount, true)
@@ -645,6 +648,7 @@ function EPGP:IncMassEPBy(strReason, nAmount)
       end
     end
   end
+
   if next(tAwarded) then
     if next(tExtrasAwarded) then
       callbacks:Fire("MassEPAward", tAwarded, strReason, nAmount,
@@ -690,13 +694,13 @@ end
 
 local bInitialized = false
 local function OnGuildChange(callback, guildCurr)
+  glog:debug("OnGuildChange Received")
   if guildCurr == nil then
     glog:debug("Not in guild, disabling modules")
     for strName, oModule in EPGP:IterateModules() do
       oModule:Disable()
     end
   else
-    SendVarToRover(callback, guildCurr)
     if EPGP.db:GetCurrentProfile() ~= guildCurr:GetName() then
       glog:debug("Setting DB Profile to: %s", guildCurr:GetName())
       EPGP.db:SetProfile(guildCurr:GetName())
@@ -707,11 +711,6 @@ local function OnGuildChange(callback, guildCurr)
         glog:debug("Enabling Module (startup): %s", strName)
         oModule:Enable()
       end
-      if EPGP:GetModule("recurring") and EPGP:GetModule("recurring"):CanResumeRecurringEP() then
-        EPGP:GetModule("recurring"):ResumeRecurringEP()
-      elseif EPGP:GetModule("recurring") then
-        EPGP:GetModule("recurring"):CancelRecurringEP()
-      end
     end
   end
 end
@@ -720,23 +719,22 @@ end
 function EPGP:OnInitialize()
   local dbDefaults = {
     profile = {
-      last_awards = {},
-      show_everyone = false,
-      sort_order = "PR",
+      tLastAwards = {},
+      bShowEveryone = false,
+      strSortOrder = "PR",
       bSortAsc = true,
       nRecurringEPPeriodMins = 15,
       nDecayPerc = 0,
       nExtrasPerc = 100,
       nMinEP = 0,
       nBaseGP = 1,
-      bonus_loot_log = {},
     }
   }
   self.db = Apollo.GetPackage("Gemini:DB-1.0").tPackage:New(self, dbDefaults)
 
   local GeminiLogging = Apollo.GetPackage("Gemini:Logging-1.2").tPackage
   EPGP.glog = GeminiLogging:GetLogger({
-        level = GeminiLogging.DEBUG,
+        level = GeminiLogging.WARN,
         pattern = "%d %n %c %l - %m",
         appender = "GeminiConsole"
   })
@@ -744,46 +742,27 @@ function EPGP:OnInitialize()
   EPGP.DLG = Apollo.GetPackage("Gemini:LibDialog-1.0").tPackage
   EPGP:RegisterDialogs()
 
+  GS.RegisterCallback(self, "GuildChanged", OnGuildChange)
   -- Load our form file
   self.xmlDoc = XmlDoc.CreateFromFile("EPGP.xml")
   Apollo.LoadSprites("EPGPSprites.xml")
 end
 
 function EPGP:OnEnable()
-  self.EPGP_StandingsDB = {}
-  self.db.profile = {}
   self.FilterList = false
 
   -- Configuration Form
   self:SetupConfig()
 
-  -- Status Button
-  self.wndEPGPMenu = Apollo.LoadForm(self.xmlDoc, "EPGPMenu", nil, self)
-  if self.wndEPGPMenu == nil then
-    return "Could not load the main window for some reason."
-  end
-
-  -- Register Slash Commands
-  Apollo.RegisterSlashCommand("epgpreset", "OnEPGPReset", self)
-
-  -- Timer Event for Recurring Awards
-  Apollo.RegisterTimerHandler("RecurringEPAwardTimer", "Timer_RecurringEPAward", self) 
-
   -- Register Events
-  Apollo.RegisterEventHandler("ChatMessage", "WhisperCommand", self)
-  Apollo.RegisterEventHandler("Group_Join", "OnGroupJoin", self)
   Apollo.RegisterEventHandler("GroupChange", "OnGroupChange", self)
 
   -- Interface Menu Shortcut Events
   Apollo.RegisterEventHandler("InterfaceMenuListHasLoaded", "OnInterfaceMenuListHasLoaded", self)
-  Apollo.RegisterEventHandler("ToggleEPGPWindow", "OnToggleEPGPWindow", self)
-
-  self:SetupOptions()
 
   GS.RegisterCallback(self, "GuildNoteChanged", ParseGuildNote)
   GS.RegisterCallback(self, "GuildNoteDeleted", HandleDeletedGuildNote)
-  GS.RegisterCallback(self, "GuildChanged", OnGuildChange)
-  
+
   EPGP.RegisterCallback(self, "BaseGPChanged", DestroyStandings)
 --[[
   local function UpdateFrameOnUpdate(self, elapsed)
@@ -887,28 +866,4 @@ function EPGP:CalculateItemGPValue( tItemInfo )
   local nItemGPCost = ((nBaseLevel + ((nQualityLevel - 1) * 2))  * 100) * nModifier
   self.ItemGPCost = nItemGPCost
   return nItemGPCost
-end 
-
-
----------------------------------------------------------------------------------------------------
--- PortForm Functions
----------------------------------------------------------------------------------------------------
-
-function EPGP:OnExportDBClick( wndHandler, wndControl, eMouseButton )
-  self.wndImportExport:FindChild("txtData"):SetText( self:exportEPGP( 1 ) )
-end
-
-function EPGP:OnImportDBClick( wndHandler, wndControl, eMouseButton )
-  self:importEPGP( self.wndImportExport:FindChild("txtData"):GetText() )
-  self.wndImportExport:Destroy()
-end
-
-function EPGP:OnPortCloseBtn( wndHandler, wndControl, eMouseButton )
-  self.wndImportExport:Destroy()
-end
-
----------------------------------------------------------------------------------------------------
--- Dialog Functions
----------------------------------------------------------------------------------------------------
-function EPGP:TestFunc( wndHandler, wndControl, strText )
 end
