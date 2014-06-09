@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Sprites>
+    <Sprite Name="EPGP_Icon" Cycle="1">
+        <Frame Texture="EPGP\images\EPGP.tga" x0="0" x1="12" x2="12" x3="12" x4="12" x5="24" y0="0" y1="12" y2="12" y3="12" y4="12" y5="24" Stretchy="1" HotspotX="0" HotspotY="0" Duration="1.000" StartColor="white" EndColor="white"/>
+    </Sprite>
+</Sprites>
